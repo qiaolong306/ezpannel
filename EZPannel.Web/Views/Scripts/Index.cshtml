@@ -1,0 +1,445 @@
+@model IEnumerable<EZPannel.Api.Models.ScriptCategory>
+@{
+    ViewData["Title"] = "脚本管理";
+}
+
+<style>
+    .cat-list .list-group-item { border: none; border-radius: 8px !important; margin-bottom: 5px; color: #606266; transition: 0.2s; }
+    .cat-list .list-group-item:hover { background-color: #f5f7fa; color: var(--primary-color); }
+    .cat-list .list-group-item.active { background-color: #ecf5ff !important; color: var(--primary-color) !important; font-weight: bold; }
+    
+    .script-card { border: none; border-radius: 12px; }
+    .badge-type { width: 60px; text-align: center; }
+    
+    .btn-icon-text { display: inline-flex; align-items: center; gap: 5px; padding: 6px 12px; border-radius: 8px; font-size: 13px; text-decoration: none !important; transition: 0.2s; }
+    .btn-run { background-color: #f0f9eb; color: #67c23a; }
+    .btn-run:hover { background-color: #67c23a; color: #fff; }
+    .btn-edit { background-color: #ecf5ff; color: #409eff; }
+    .btn-edit:hover { background-color: #409eff; color: #fff; }
+    .btn-delete { background-color: #fef0f0; color: #f56c6c; }
+    .btn-delete:hover { background-color: #f56c6c; color: #fff; }
+</style>
+
+<div class="row">
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm rounded-3">
+            <div class="card-header border-0 bg-white pt-3 px-3 d-flex justify-content-between align-items-center">
+                <h6 class="mb-0 fw-bold">脚本分类</h6>
+                <button class="btn btn-sm btn-light rounded-circle" data-bs-toggle="modal" data-bs-target="#addCategoryModal">
+                    <i class="bi bi-plus"></i>
+                </button>
+            </div>
+            <div class="card-body p-2">
+                <div class="list-group cat-list">
+                    <button class="list-group-item list-group-item-action active" onclick="showCategory(0)">
+                        <i class="bi bi-collection me-2"></i>全部脚本
+                    </button>
+                    @foreach (var cat in Model)
+                    {
+                        <button class="list-group-item list-group-item-action d-flex justify-content-between align-items-center" onclick="showCategory(@cat.Id)">
+                            <span><i class="bi bi-folder2 me-2"></i>@cat.Name</span>
+                            <span class="badge bg-light text-muted rounded-pill fw-normal">@(cat.Scripts?.Count ?? 0)</span>
+                        </button>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-9">
+        <div class="card border-0 shadow-sm script-card">
+            <div class="card-header border-0 bg-white pt-3 px-3 d-flex justify-content-between align-items-center">
+                <h5 class="mb-0 fw-bold" id="categoryTitle">全部脚本</h5>
+                <button class="btn btn-primary px-3 rounded-pill" onclick="addNewScript()">
+                    <i class="bi bi-plus-lg me-1"></i> 新增脚本
+                </button>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th class="ps-3 border-0">名称</th>
+                                <th class="border-0">类型</th>
+                                <th class="border-0">适配系统</th>
+                                <th class="border-0 text-muted small">创建时间</th>
+                                <th class="pe-3 border-0 text-end">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="scriptTableBody">
+                            @foreach (var cat in Model)
+                            {
+                                @if (cat.Scripts != null)
+                                {
+                                    @foreach (var script in cat.Scripts)
+                                    {
+                                        <tr class="script-row cat-@cat.Id">
+                                            <td class="ps-3">
+                                                <div class="fw-medium">@script.Name</div>
+                                            </td>
+                                            <td>
+                                                @{
+                                                    var badgeClass = script.Type switch {
+                                                        "sh" => "bg-dark",
+                                                        "ps1" => "bg-primary",
+                                                        "bat" => "bg-secondary",
+                                                        "py" => "bg-warning text-dark",
+                                                        _ => "bg-info"
+                                                    };
+                                                    var typeName = script.Type switch {
+                                                        "sh" => "Shell",
+                                                        "ps1" => "PowerShell",
+                                                        "bat" => "Batch",
+                                                        "py" => "Python",
+                                                        _ => script.Type
+                                                    };
+                                                }
+                                                <span class="badge @badgeClass badge-type">@typeName</span>
+                                            </td>
+                                            <td>
+                                                @if (script.OS == "Windows") {
+                                                    <span class="text-primary small"><i class="bi bi-windows me-1"></i>Windows</span>
+                                                } else if (script.OS == "Linux") {
+                                                    <span class="text-danger small"><i class="bi bi-ubuntu me-1"></i>Linux</span>
+                                                } else {
+                                                    <span class="text-success small"><i class="bi bi-check-circle me-1"></i>通用</span>
+                                                }
+                                            </td>
+                                            <td class="text-muted small">@script.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                                            <td class="pe-3 text-end">
+                                                <div class="d-flex justify-content-end gap-2 align-items-center">
+                                                    <select class="form-select form-select-sm me-2" style="width: auto; min-width: 150px;" id="serverSelect_@script.Id">
+                                                        <option value="">-- 选择服务器 --</option>
+                                                    </select>
+                                                    <button class="btn-icon-text btn-run" onclick="runScriptOnServer(@script.Id, '@script.Name', '@script.OS', '@script.Id')">
+                                                        <i class="bi bi-play-fill"></i>运行
+                                                    </button>
+                                                    <button class="btn-icon-text btn-edit" onclick="editScript(@script.Id)">
+                                                        <i class="bi bi-pencil-square"></i>编辑
+                                                    </button>
+                                                    <button class="btn-icon-text btn-delete" onclick="deleteScript(@script.Id)">
+                                                        <i class="bi bi-trash"></i>删除
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    }
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Category Modal -->
+<div class="modal fade" id="addCategoryModal" tabindex="-1">
+    <div class="modal-dialog">
+        <form class="modal-content" method="post" action="/Scripts/Category">
+            <div class="modal-header">
+                <h5 class="modal-title">新增分类</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">分类名称</label>
+                    <input type="text" class="form-control" name="name" required placeholder="如：系统维护">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="submit" class="btn btn-primary">保存</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Add/Edit Script Modal -->
+<div class="modal fade" id="scriptModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <form id="scriptForm" class="modal-content" method="post" action="/Scripts">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editModalTitle">新增脚本</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" name="Id" value="0">
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <label class="form-label">脚本名称</label>
+                        <input type="text" class="form-control" name="Name" required placeholder="如：清理日志">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">类型</label>
+                        <select class="form-select" name="Type">
+                            <option value="sh">Shell (.sh)</option>
+                            <option value="ps1">PowerShell (.ps1)</option>
+                            <option value="bat">Batch (.bat)</option>
+                            <option value="py">Python (.py)</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">适配系统</label>
+                        <select class="form-select" name="OS">
+                            <option value="Common">通用 (Linux & Windows)</option>
+                            <option value="Linux">Linux 专用</option>
+                            <option value="Windows">Windows 专用</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">所属分类</label>
+                        <select class="form-select" name="CategoryId">
+                            @foreach (var cat in Model)
+                            {
+                                <option value="@cat.Id">@cat.Name</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+                <div class="mb-0">
+                    <label class="form-label">脚本内容</label>
+                    <textarea class="form-control text-monospace" name="Content" rows="12" style="font-family: Consolas, monospace; background-color: #2b2b2b; color: #a9b7c6;" placeholder="# 请在此输入脚本内容..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="submit" class="btn btn-primary">保存脚本</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    let servers = [];
+    let currentRunScriptId = 0;
+
+    // Load servers on page load
+    document.addEventListener('DOMContentLoaded', async function() {
+        try {
+            const res = await axios.get('/Servers?quick=true');
+            servers = res.data;
+            
+            // Populate all server selects
+            populateAllServerSelects();
+        } catch (error) {
+            console.error('Failed to load servers:', error);
+        }
+    });
+    
+    function populateAllServerSelects() {
+        // For each script row, populate its server select dropdown
+        document.querySelectorAll('[id^="serverSelect_"]').forEach(select => {
+            const scriptId = select.id.replace('serverSelect_', '');
+            const scriptRow = select.closest('tr');
+            
+            // Get the OS for this script
+            const osCell = scriptRow.querySelector('td:nth-child(3)');
+            let os = 'Common';
+            
+            if (osCell.textContent.includes('Windows')) {
+                os = 'Windows';
+            } else if (osCell.textContent.includes('Linux')) {
+                os = 'Linux';
+            }
+            
+            // Filter servers based on OS
+            const filteredServers = servers.filter(s => {
+                if (os === 'Common') return true;
+                return s.operatingSystem === os;
+            });
+            
+            // Clear existing options except the first one
+            select.innerHTML = '<option value="">-- 选择服务器 --</option>';
+            
+            // Add filtered servers
+            filteredServers.forEach(server => {
+                const option = document.createElement('option');
+                option.value = server.id;
+                option.text = `${server.name} (${server.host})`;
+                select.appendChild(option);
+            });
+            
+            if (filteredServers.length === 0) {
+                const option = document.createElement('option');
+                option.text = '没有可用服务器';
+                option.disabled = true;
+                select.appendChild(option);
+            }
+        });
+    }
+
+    function runScriptOnServer(scriptId, name, os, rowId) {
+        const serverSelect = document.getElementById('serverSelect_' + rowId);
+        const serverId = serverSelect.value;
+        
+        if (!serverId) {
+            alert('请先选择一个服务器');
+            return;
+        }
+        
+        // Find the server name
+        const server = servers.find(s => s.id == serverId);
+        
+        if (!server) {
+            alert('服务器不存在');
+            return;
+        }
+        
+        // Log to history
+        try {
+            const formData = new FormData();
+            formData.append('scriptId', scriptId);
+            formData.append('serverId', serverId);
+            axios.post('/Scripts/LogHistory', formData);
+        } catch (e) { console.error('Failed to log history', e); }
+        
+        // Open a floating terminal with the script
+        openFloatingTerminal(parseInt(serverId), server.name, parseInt(scriptId));
+    }
+
+    function showCategory(id) {
+        if (id === 0) {
+            document.querySelectorAll('.script-row').forEach(r => r.classList.remove('d-none'));
+            document.getElementById('categoryTitle').innerText = '全部脚本';
+        } else {
+            document.querySelectorAll('.script-row').forEach(r => r.classList.add('d-none'));
+            document.querySelectorAll('.cat-' + id).forEach(r => r.classList.remove('d-none'));
+            
+            const item = event.currentTarget;
+            const catName = item.querySelector('span')?.innerText || item.innerText.split('\n')[0];
+            document.getElementById('categoryTitle').innerText = '分类: ' + catName;
+        }
+        
+        document.querySelectorAll('.cat-list .list-group-item').forEach(i => i.classList.remove('active'));
+        if (event) event.currentTarget.classList.add('active');
+    }
+
+    // Old runScript function - keeping for compatibility
+    async function runScript(id, name, os) {
+        currentRunScriptId = id;
+        document.getElementById('runScriptName').innerText = name;
+        const modal = new bootstrap.Modal(document.getElementById('runScriptModal'));
+        modal.show();
+
+        if (servers.length === 0) {
+            const res = await axios.get('/Servers?quick=true');
+            servers = res.data;
+        }
+
+        const filteredServers = servers.filter(s => {
+            if (os === 'Common') return true;
+            return s.operatingSystem === os;
+        });
+
+        const list = document.getElementById('serverSelectListTable');
+        list.innerHTML = filteredServers.map(s => `
+            <tr>
+                <td class="ps-3">
+                    <input type="checkbox" class="form-check-input server-checkbox" value="${s.id}" onchange="updateSelectedCount()">
+                </td>
+                <td>
+                    <div class="fw-bold">${s.name}</div>
+                </td>
+                <td><code class="small">${s.host}</code></td>
+                <td>
+                    <span class="badge ${s.operatingSystem === 'Windows' ? 'bg-primary' : 'bg-danger'} bg-opacity-10 text-${s.operatingSystem === 'Windows' ? 'primary' : 'danger'} border border-${s.operatingSystem === 'Windows' ? 'primary' : 'danger'} border-opacity-25">
+                        ${s.operatingSystem}
+                    </span>
+                </td>
+                <td class="pe-3 text-end">
+                    <span class="status-dot ${s.status ? 'dot-online' : 'dot-offline'}"></span>
+                </td>
+            </tr>
+        `).join('');
+        
+        if (filteredServers.length === 0) {
+            list.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-muted">没有符合条件的在线服务器</td></tr>';
+        }
+        
+        document.getElementById('selectAllServers').checked = false;
+        updateSelectedCount();
+    }
+
+    function toggleSelectAll(el) {
+        document.querySelectorAll('.server-checkbox').forEach(cb => {
+            cb.checked = el.checked;
+        });
+        updateSelectedCount();
+    }
+
+    function updateSelectedCount() {
+        const checked = document.querySelectorAll('.server-checkbox:checked').length;
+        document.getElementById('selectedCount').innerText = `已选择 ${checked} 台服务器`;
+    }
+
+    function executeOnSelectedServers() {
+        const selectedIds = Array.from(document.querySelectorAll('.server-checkbox:checked')).map(cb => cb.value);
+        if (selectedIds.length === 0) {
+            alert('请至少选择一个服务器');
+            return;
+        }
+
+        // Only allow single selection
+        if (selectedIds.length > 1) {
+            alert('脚本执行仅支持单个服务器，请只选择一个服务器');
+            return;
+        }
+
+        const serverId = selectedIds[0];
+        
+        // Log to history
+        try {
+            const formData = new FormData();
+            formData.append('scriptId', currentRunScriptId);
+            formData.append('serverId', serverId);
+            axios.post('/Scripts/LogHistory', formData);
+        } catch (e) { console.error('Failed to log history', e); }
+
+        // Fetch server name for the floating terminal
+        const server = servers.find(s => s.id == serverId);
+        if (server) {
+            // Open a floating terminal with the script
+            openFloatingTerminal(serverId, server.name, currentRunScriptId);
+        }
+    }
+
+    function addNewScript() {
+        document.getElementById('editModalTitle').innerText = '新增脚本';
+        const form = document.getElementById('scriptForm');
+        form.reset();
+        form.querySelector('[name="Id"]').value = 0;
+        new bootstrap.Modal(document.getElementById('scriptModal')).show();
+    }
+
+    async function editScript(id) {
+        try {
+            const res = await axios.get('/Scripts/' + id);
+            const script = res.data;
+            
+            document.getElementById('editModalTitle').innerText = '编辑脚本';
+            const form = document.getElementById('scriptForm');
+            form.querySelector('[name="Id"]').value = script.id;
+            form.querySelector('[name="Name"]').value = script.name;
+            form.querySelector('[name="Type"]').value = script.type;
+            form.querySelector('[name="Content"]').value = script.content;
+            form.querySelector('[name="OS"]').value = script.os;
+            form.querySelector('[name="CategoryId"]').value = script.categoryId;
+            
+            new bootstrap.Modal(document.getElementById('scriptModal')).show();
+        } catch (err) {
+            alert('获取脚本详情失败: ' + err.message);
+        }
+    }
+
+    async function deleteScript(id) {
+        if (!confirm('确定要删除该脚本吗？')) return;
+        try {
+            await axios.delete('/Scripts/' + id);
+            location.reload();
+        } catch (err) {
+            alert('删除失败: ' + err.message);
+        }
+    }
+</script>
+@{await Html.RenderPartialAsync("../Shared/_FloatingTerminal");}
+}

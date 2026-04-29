@@ -1,0 +1,368 @@
+@{    Layout="/Views/Shared/_ServerLayout.cshtml";    ViewData["Title"] = "服务器概览";    ViewData["ActiveMenu"] = "servers";
+string os = ViewData["ServerVersion"] as string;
+
+}
+
+<div>
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="mb-0">服务器监控</h2>
+        <div class="d-flex gap-2">
+            <button class="btn btn-sm btn-outline-secondary" onclick="updateStats()">
+                <i class="bi bi-arrow-clockwise"></i> 刷新
+            </button>
+            <button class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-three-dots-vertical"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- 状态卡片 -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h5 class="text-muted mb-1">CPU</h5>
+                            <div class="d-flex items-center">
+                                <span class="h3 font-bold">0%</span>
+                                <span class="ml-2 text-sm">xxxx</span>
+                            </div>
+                        </div>
+                        <div class="circle-progress" style="width: 80px; height: 80px;">
+                            <svg viewBox="0 0 100 100" style="transform: rotate(-90deg);">
+                                <circle cx="50" cy="50" r="45" fill="none" stroke="#e0e0e0" stroke-width="8"></circle>
+                                <circle cx="50" cy="50" r="45" fill="none" stroke="#4caf50" stroke-width="8" stroke-dasharray="283" stroke-dashoffset="283"></circle>
+                            </svg>
+                            <div class="text-center" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 16px;">0%</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h5 class="text-muted mb-1">内存</h5>
+                            <div class="d-flex items-center">
+                                <span class="h3 font-bold">0%</span>
+                                <span class="ml-2 text-sm">0MB / 0GB</span>
+                            </div>
+                        </div>
+                        <div class="circle-progress" style="width: 80px; height: 80px;">
+                            <svg viewBox="0 0 100 100" style="transform: rotate(-90deg);">
+                                <circle cx="50" cy="50" r="45" fill="none" stroke="#e0e0e0" stroke-width="8"></circle>
+                                <circle cx="50" cy="50" r="45" fill="none" stroke="#4caf50" stroke-width="8" stroke-dasharray="283" stroke-dashoffset="269"></circle>
+                            </svg>
+                            <div class="text-center" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 16px;">5%</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h5 class="text-muted mb-1">硬盘</h5>
+                            <div class="d-flex items-center">
+                                <span class="h3 font-bold">0%</span>
+                                <span class="ml-2 text-sm">0GB / 0GB</span>
+                            </div>
+                        </div>
+                        <div class="circle-progress" style="width: 80px; height: 80px;">
+                            <svg viewBox="0 0 100 100" style="transform: rotate(-90deg);">
+                                <circle cx="50" cy="50" r="45" fill="none" stroke="#e0e0e0" stroke-width="8"></circle>
+                                <circle cx="50" cy="50" r="45" fill="none" stroke="#4caf50" stroke-width="8" stroke-dasharray="283" stroke-dashoffset="283"></circle>
+                            </svg>
+                            <div class="text-center" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 16px;">0%</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 进程列表 -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">进程列表</h5>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>进程名</th>
+                            <th>PID</th>
+                            <th>CPU%</th>
+                            <th>内存(MB)</th>
+                            <th>状态</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 进程详情模态框 -->
+<div class="modal fade" id="processDetailModal" tabindex="-1" aria-labelledby="processDetailModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="processDetailModalLabel">进程详情</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div id="processDetails"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+    .circle-progress {
+        position: relative;
+    }
+    
+    .circle-progress svg {
+        width: 100%;
+        height: 100%;
+    }
+</style>
+
+@section Scripts {
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script>
+        // 获取当前服务器ID
+        const serverId = @(ViewData["ServerId"] ?? 0);
+        let cpuCores = 1;
+        // 更新服务器状态数据
+        function updateStats() {
+            console.log('Updating stats...');
+            // 调用API获取服务器信息
+            axios.get(`/api/Servers/${serverId}/info`)
+                .then(response => {
+                    const data = response.data;
+                    console.log('Server info:', data);
+                    // 更新CPU信息
+                    if (data.status && data.status.cpuUsage) {
+                        document.querySelector('.row.mb-4 .col-md-3:nth-child(1) .card .h3').textContent = `${data.status.cpuUsage}%`;
+                        document.querySelector('.row.mb-4 .col-md-3:nth-child(1) .card .ml-2').textContent = `${data.status.cpuCores}核心`;
+                        updateCircleProgress(1, data.status.cpuUsage);
+                        document.querySelector('.row.mb-4 .col-md-3:nth-child(1) .card .text-center').textContent = `${data.status.cpuUsage}%`;
+                    }
+
+                    // 更新内存信息
+                    if (data.status && data.status.memUsage) {
+                        document.querySelector('.row.mb-4 .col-md-3:nth-child(2) .card .h3').textContent = `${data.status.memUsage}%`;
+                        document.querySelector('.row.mb-4 .col-md-3:nth-child(2) .card .ml-2').textContent = `${data.status.memUsed}MB / ${data.status.memTotal}MB`;
+                        updateCircleProgress(2, data.status.memUsage);
+                        document.querySelector('.row.mb-4 .col-md-3:nth-child(2) .card .text-center').textContent = `${data.status.memUsage}%`;
+                    }
+
+                    // 更新硬盘信息
+                    if (data.status && data.status.diskUsage) {
+                        document.querySelector('.row.mb-4 .col-md-3:nth-child(3) .card .h3').textContent = `${data.status.diskUsage}%`;
+                        document.querySelector('.row.mb-4 .col-md-3:nth-child(3) .card .ml-2').textContent = `${data.status.diskUsed} / ${data.status.diskTotal}`;
+                        updateCircleProgress(3, data.status.diskUsage);
+                        document.querySelector('.row.mb-4 .col-md-3:nth-child(3) .card .text-center').textContent = `${data.status.diskUsage}%`;
+                    }
+                    udpateProcesss();
+                })
+                .catch(error => {
+                    console.error('Error fetching server info:', error);
+                });
+      
+        }
+
+
+        function udpateProcesss(){
+               axios.get(`/api/Servers/${serverId}/processes`)
+                .then(res => {
+                    if (res.data.success) {
+                        let procs = [];
+                        let os 
+                        = @Html.Raw(Json.Serialize(@os));
+                        if (os === 'Windows') {
+                            const data = JSON.parse(res.data.output);
+                            procs = Array.isArray(data) ? data : [data];
+                        } else {
+                            const cleanOutput = res.data.output.trim().replace(/,$/, '');
+                            procs = JSON.parse(`[${cleanOutput}]`);
+                        }
+                        updateProcessList(procs);
+                        console.log('Processes:', procs);
+                    }
+                }).catch(error => {
+                    console.error('Error fetching server processes:', error);
+                });
+
+        }
+
+
+        
+        // 更新圆形进度条
+        function updateCircleProgress(index, percentage) {
+            const circles = document.querySelectorAll('.circle-progress circle:last-child');
+            if (circles[index]) {
+                try {
+                    // 确保percentage是有效的数字
+                    percentage = parseFloat(percentage) || 0;
+                    // 限制在0-100范围内
+                    percentage = Math.max(0, Math.min(100, percentage));
+                    
+                    const circle = circles[index];
+                    const radius = circle.r.baseVal.value;
+                    const circumference = radius * 2 * Math.PI;
+                    const offset = circumference - (percentage / 100) * circumference;
+                    circle.style.strokeDasharray = `${circumference} ${circumference}`;
+                    circle.style.strokeDashoffset = offset;
+                } catch (e) {
+                    console.error('Error updating circle progress:', e);
+                }
+            }
+        }
+        
+        // 更新进程列表
+        function updateProcessList(processes) {
+            const tbody = document.querySelector('table tbody');
+            if (!tbody) return;
+            // 清空现有进程列表
+            tbody.innerHTML = '';
+            // 确保是数组
+            processes = Array.isArray(processes) ? processes : [];
+            //按内存排序大到小
+            processes.sort((a, b) => (b.mem || 0) - (a.mem || 0));
+            try {
+                // 添加进程到表格
+                processes.forEach(process => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${process.name || process.comm}</td>
+                        <td>${process.id || process.pid}</td>
+                        <td>${process.cpu/cpuCores || 0} %</td>
+                        <td>${process.mem || 0} MB</td>
+                        <td><span class="badge bg-success">运行中</span></td>
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                <button class="btn btn-outline-info" onclick="viewProcessDetail(${process.id || process.pid})" title="查看详情">
+                                    <i class="bi bi-eye"></i>
+                                </button>
+                                <button class="btn btn-outline-danger" onclick="killProcess(${process.id || process.pid}, '${process.name || process.comm}')" title="结束进程">
+                                    <i class="bi bi-x-lg"></i>
+                                </button>
+                            </div>
+                        </td>`;
+                    tbody.appendChild(row);
+                });
+            } catch (error) {
+                console.error('Error parsing process data:', error);
+            }
+        }
+        
+        // 查看进程详情
+        function viewProcessDetail(pid) {
+            // 显示加载状态
+            const loadingHtml = `
+                <div class="d-flex justify-content-center py-5">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">加载中...</span>
+                    </div>
+                </div>
+            `;
+            
+            // 设置模态框内容为加载状态
+            document.getElementById('processDetails').innerHTML = loadingHtml;
+            
+            // 显示模态框
+            const modal = new bootstrap.Modal(document.getElementById('processDetailModal'));
+            modal.show();
+            
+            // 从API获取进程详细信息
+            axios.get(`/api/Servers/${serverId}/processes/${pid}`)
+                .then(response => {
+                    if (response.data.success) {
+                        const process = response.data.data;
+                        
+                        // 构建详细信息HTML
+                        let detailsHtml = '<div class="row">';
+                        detailsHtml += '<div class="col-md-6">';
+                        detailsHtml += '<h6>基本信息</h6>';
+                        detailsHtml += '<ul class="list-group list-group-flush">';
+                        detailsHtml += `<li class="list-group-item"><strong>进程名:</strong> ${process.ProcessName || process.name || process.comm || '未知'}</li>`;
+                        detailsHtml += `<li class="list-group-item"><strong>PID:</strong> ${process.Id || process.id || process.pid || '未知'}</li>`;
+                        detailsHtml += `<li class="list-group-item"><strong>CPU使用率:</strong> ${(process.CPU || process.cpu || 0).toFixed(2)}%</li>`;
+                        detailsHtml += `<li class="list-group-item"><strong>内存使用:</strong> ${Math.round((process.WorkingSet64 || process.rss || 0) / 1024 / 1024)} MB</li>`;
+                        detailsHtml += `<li class="list-group-item"><strong>状态:</strong> ${process.Responding ? '响应中' : '未响应' || '运行中'}</li>`;
+                        detailsHtml += '</ul>';
+                        detailsHtml += '</div>';
+                        detailsHtml += '<div class="col-md-6">';
+                        detailsHtml += '<h6>扩展信息</h6>';
+                        detailsHtml += '<ul class="list-group list-group-flush">';
+                        detailsHtml += `<li class="list-group-item"><strong>用户:</strong> ${process.user || '未知'}</li>`;
+                        detailsHtml += `<li class="list-group-item"><strong>启动时间:</strong> ${process.StartTime || process.start || '未知'}</li>`;
+                        detailsHtml += `<li class="list-group-item"><strong>路径:</strong> ${process.Path || '未知'}</li>`;
+                        detailsHtml += `<li class="list-group-item"><strong>命令行:</strong> ${process.CommandLine || process.cmd || '未知'}</li>`;
+                        detailsHtml += '</ul>';
+                        detailsHtml += '</div>';
+                        detailsHtml += '</div>';
+                        
+                        // 更新模态框内容
+                        document.getElementById('processDetails').innerHTML = detailsHtml;
+                    } else {
+                        // 显示错误信息
+                        document.getElementById('processDetails').innerHTML = `<div class="alert alert-danger">获取进程详情失败: ${response.data.message || '未知错误'}</div>`;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching process details:', error);
+                    // 显示错误信息
+                    document.getElementById('processDetails').innerHTML = `<div class="alert alert-danger">获取进程详情时发生错误: ${error.message}</div>`;
+                });
+        }
+        
+        // 结束进程
+        function killProcess(pid, processName) {
+            // 确认对话框
+            if (confirm(`确定要结束进程 ${processName} (PID: ${pid}) 吗？此操作不可撤销。`)) {
+                // 发送结束进程请求
+                axios.post(`/api/Servers/${serverId}/kill-process`, {
+                    pid: pid
+                })
+                .then(response => {
+                    if (response.data.success) {
+                        alert('进程已成功结束！');
+                        // 刷新进程列表
+                        udpateProcesss();
+                    } else {
+                        alert('结束进程失败：' + (response.data.message || '未知错误'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Error killing process:', error);
+                    alert('结束进程时发生错误：' + error.message);
+                });
+            }
+        }
+        
+        // 初始加载
+        document.addEventListener('DOMContentLoaded', function() {
+            updateStats();
+            // 每5秒刷新一次数据
+            //setInterval(updateStats, 5000);
+        });
+    </script>
+}

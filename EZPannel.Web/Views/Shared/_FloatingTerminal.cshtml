@@ -1,0 +1,338 @@
+<div class="modal fade" id="floatingTerminalModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-fullscreen-lg-down">
+        <div class="modal-content bg-dark border-0 shadow-lg">
+            <div class="modal-header border-secondary py-2 bg-black">
+                <h6 class="modal-title text-light small fw-bold opacity-75">
+                    <i class="bi bi-terminal me-2"></i>远程终端 - <span id="floatingTerminalServerName">Loading...</span>
+                </h6>
+                <div class="d-flex gap-2 align-items-center">
+                    <button type="button" class="btn-close btn-close-white small" data-bs-dismiss="modal"
+                        style="font-size: 0.8rem;"></button>
+                </div>
+            </div>
+            <div class="modal-body p-0" style="background-color: #000; height: 60vh; overflow: hidden;">
+                <div id="floating-terminal-container" style="height: 100%;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Terminal Component Scripts -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
+<style>
+    /* 美化终端滚动条 */
+    .xterm-viewport {
+        scrollbar-width: thin;
+        scrollbar-color: rgba(100, 100, 100, 0.5) rgba(30, 30, 30, 0.3);
+    }
+    
+    .xterm-viewport::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+    }
+    
+    .xterm-viewport::-webkit-scrollbar-track {
+        background: rgba(30, 30, 30, 0.3);
+        border-radius: 4px;
+    }
+    
+    .xterm-viewport::-webkit-scrollbar-thumb {
+        background: rgba(100, 100, 100, 0.5);
+        border-radius: 4px;
+    }
+    
+    .xterm-viewport::-webkit-scrollbar-thumb:hover {
+        background: rgba(120, 120, 120, 0.7);
+    }
+    
+    /* 确保终端容器高度正确 */
+    #floating-terminal-container {
+        height: 100% !important;
+    }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@@microsoft/signalr@10.0.0/dist/browser/signalr.min.js"></script>
+<script>
+    let floatingTerminals = {};
+    let floatingFitAddons = {};
+    let floatingConnections = {};
+    let floatingScriptContents = {};
+    let floatingScriptSents = {};
+    let currentFloatingServerId = null;
+
+    function openFloatingTerminal(serverId, serverName, scriptId = null) {
+        console.log('Opening floating terminal for server:', serverId, "serverName:", serverName, "scriptId:", scriptId);
+        // Validate inputs
+        if (!serverId || serverId <= 0) {
+            console.error('Invalid server ID:', serverId);
+            alert('无效的服务器ID');
+            return;
+        }
+
+        // Close any existing connection for this server first
+        if (floatingConnections[serverId] && floatingConnections[serverId].state === 'Connected') {
+            floatingConnections[serverId].stop();
+        }
+
+        // Initialize terminal states for this server
+        floatingScriptContents[serverId] = null;
+        floatingScriptSents[serverId] = false;
+
+        // Set the current server ID
+        currentFloatingServerId = serverId;
+
+        document.getElementById('floatingTerminalServerName').textContent = serverName || 'Loading...';
+
+        const modal = new bootstrap.Modal(document.getElementById('floatingTerminalModal'));
+
+        // Track modal state
+        const modalElement = document.getElementById('floatingTerminalModal');
+
+        modalElement.addEventListener('hidden.bs.modal', function () {
+            // Clean up connection when modal is closed
+            if (floatingConnections[currentFloatingServerId]) {
+                floatingConnections[currentFloatingServerId].stop();
+            }
+        });
+        modal.show();
+        // Initialize terminal after modal is shown
+        setTimeout(() => initFloatingTerminal(serverId), 100);
+        // If there's a script to run, load it
+        if (scriptId) {
+            setTimeout(() => loadScriptForExecution(serverId, scriptId), 1000);
+        }
+    }
+
+    function loadScriptForExecution(serverId, scriptId) {
+        if (!scriptId || scriptId <= 0) {
+            console.error('Invalid script ID:', scriptId);
+            return;
+        }
+
+        axios.get('/Scripts/' + scriptId)
+            .then(response => {
+                if (response && response.data && response.data.content !== undefined) {
+                    const scriptContent = response.data.content;
+                    const scriptName = response.data.name || 'temp_script';
+                    const scriptType = response.data.type || 'sh';
+
+                    console.log('Uploading script to server ' + serverId + '...');
+
+                    // Store script type for later use
+                    if (typeof serverScriptTypes === 'undefined') {
+                        window.serverScriptTypes = {};
+                    }
+                    serverScriptTypes[serverId] = scriptType;
+
+                    // Upload script to server via API
+                    uploadScriptToServer(serverId, scriptId,scriptName, scriptType, scriptContent)
+                        .then(filePath => {
+                            console.log('Script uploaded to: ' + filePath);
+
+                            // Store script info for later execution when terminal connects
+                            floatingScriptContents[serverId] = filePath;
+
+                            // If terminal is already connected, execute the script
+                            if (floatingConnections[serverId] && floatingConnections[serverId].state === 'Connected') {
+                                executeUploadedScript(serverId, filePath, scriptType);
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Failed to upload script:', error);
+                            alert('上传脚本失败: ' + error.message);
+                        });
+                } else {
+                    console.error('Invalid script response for ID:', scriptId);
+                }
+            })
+            .catch(error => {
+                console.error('Failed to load script for floating terminal:', error);
+                alert('加载脚本失败: ' + (error.response?.data?.message || error.message));
+            });
+    }
+
+    function uploadScriptToServer(serverId, scriptId,scriptName, scriptType, scriptContent) {
+        return new Promise((resolve, reject) => {
+            // Create unique filename with timestamp
+            const timestamp = Date.now();
+            const extension = getScriptExtension(scriptType);
+            const fileName = `ez_script_${scriptId}.${extension}`;
+
+            // Create FormData object for proper form submission
+            const formData = new FormData();
+            formData.append('serverId', serverId);
+            formData.append('fileName', fileName);
+            formData.append('content', scriptContent);
+
+            // Send upload request to backend API
+            // Try the API route first (for API controller access)
+            const apiRoute = 'Scripts/upload-to-server';
+
+            axios.post(apiRoute, formData, {
+                headers: {
+                    'Content-Type': 'multipart/form-data'
+                }
+            })
+                .then(result => {
+                    if (result.data && result.data.filePath) {
+                        resolve(result.data.filePath);
+                    } else {
+                        reject(new Error('Invalid response from server'));
+                    }
+                })
+                .catch(error => {
+                    console.error('API route upload error details:', error.response || error);
+                    // If API route fails, try the MVC route
+                    const mvcRoute = '/Scripts/upload-to-server';
+                    return axios.post(mvcRoute, formData, {
+                        headers: {
+                            'Content-Type': 'multipart/form-data'
+                        }
+                    })
+                        .then(result => {
+                            if (result.data && result.data.filePath) {
+                                resolve(result.data.filePath);
+                            } else {
+                                reject(new Error('Invalid response from server'));
+                            }
+                        })
+                        .catch(secondError => {
+                            console.error('MVC route upload error details:', secondError.response || secondError);
+                            reject(secondError);
+                        });
+                });
+        });
+    }
+
+    function getScriptExtension(type) {
+        switch (type) {
+            case 'sh': return 'sh';
+            case 'ps1': return 'ps1';
+            case 'bat': return 'bat';
+            case 'py': return 'py';
+            default: return 'sh';
+        }
+    }
+
+    function executeUploadedScript(serverId, filePath, scriptType) {
+        let command;
+
+        // Determine execution command based on script type and OS
+        switch (scriptType) {
+            case 'sh':
+                // 优化sh脚本执行逻辑：
+                // 1. 用bash显式调用（适配Web终端/精简系统）
+                // 2. 路径前加./（相对路径必加）
+                // 3. 先cd到脚本所在目录，避免路径层级问题
+                const scriptDir = filePath.substring(0, filePath.lastIndexOf('/')); // 提取脚本所在目录
+                const scriptName = filePath.substring(filePath.lastIndexOf('/') + 1); // 提取脚本文件名
+                // 组合安全的执行命令：先切目录 → 加执行权限 → bash显式运行
+                command = `cd ${scriptDir} && chmod +x ${scriptName} && bash ./${scriptName}\r`;
+                break;
+            case 'bat':
+                command = `${filePath}\r`;
+                break;
+            case 'ps1':
+                command = `powershell -ExecutionPolicy Bypass -File ${filePath}\r`;
+                break;
+            case 'py':
+                command = `python ${filePath}\r`;
+                break;
+            default:
+                command = `${filePath}\r`;
+                break;
+        }
+
+        console.log('Executing command: ' + command);
+
+        // Send command to terminal
+        if (floatingConnections[serverId] && floatingConnections[serverId].state === 'Connected') {
+            floatingConnections[serverId].send("SendData", command);
+        }
+    }
+
+    function initFloatingTerminal(serverId) {
+        // Check if serverId is valid
+        if (!serverId || serverId <= 0) {
+            console.error('Invalid server ID passed to initFloatingTerminal:', serverId);
+            const container = document.getElementById('floating-terminal-container');
+            if (container) {
+                container.innerHTML = '<div class="text-center text-danger p-4">无效的服务器ID</div>';
+            }
+            return;
+        }
+
+        const container = document.getElementById('floating-terminal-container');
+        if (!container) {
+            console.error('Terminal container not found');
+            return;
+        }
+        container.innerHTML = ''; // Clear
+
+        floatingTerminals[serverId] = new Terminal({
+            cursorBlink: true,
+            fontSize: 14,
+            fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+            theme: { background: '#000' }
+        });
+
+        floatingFitAddons[serverId] = new window.FitAddon.FitAddon();
+        floatingTerminals[serverId].loadAddon(floatingFitAddons[serverId]);
+        floatingTerminals[serverId].open(container);
+        floatingFitAddons[serverId].fit();
+
+        floatingConnections[serverId] = new signalR.HubConnectionBuilder()
+            .withUrl("/terminalHub?access_token=" + (localStorage.getItem('token') || ""))
+            .withAutomaticReconnect()
+            .build();
+
+        floatingConnections[serverId].on("ReceiveData", data => {
+            if (floatingTerminals[serverId]) {
+                floatingTerminals[serverId].write(data);
+            }
+        });
+
+        floatingTerminals[serverId].onData(data => {
+            if (floatingConnections[serverId] && floatingConnections[serverId].state === "Connected") {
+                floatingConnections[serverId].send("SendData", data);
+            }
+        });
+
+        floatingConnections[serverId].start().then(() => {
+            console.log('Terminal connection established for server:', serverId);
+            if (floatingConnections[serverId]) {
+                floatingConnections[serverId].send("Connect", serverId);
+                if (floatingTerminals[serverId]) {
+                    floatingTerminals[serverId].focus();
+
+                    // Check if we have an uploaded script to run for this server
+                    if (floatingScriptContents[serverId]) {
+                        console.log('Executing uploaded script...');
+                        // Add slight delay to ensure terminal is fully ready
+                        setTimeout(() => {
+                            // Get the script type (we need to store this separately)
+                            // For now, we'll assume the scriptType is stored with the server
+                            if (typeof serverScriptTypes === 'undefined') {
+                                window.serverScriptTypes = {};
+                            }
+                            const scriptType = serverScriptTypes[serverId] || 'sh';
+                            executeUploadedScript(serverId, floatingScriptContents[serverId], scriptType);
+                        }, 300);
+                    }
+                }
+            }
+        }).catch(err => {
+            console.error('Failed to connect to terminal:', err);
+            if (floatingTerminals[serverId]) {
+                floatingTerminals[serverId].write("\r\n\x1b[31m连接失败: " + err.message + "\x1b[0m\r\n");
+            }
+        });
+
+        window.addEventListener('resize', () => {
+            if (floatingFitAddons[serverId]) {
+                floatingFitAddons[serverId].fit();
+            }
+        });
+    }
+</script>

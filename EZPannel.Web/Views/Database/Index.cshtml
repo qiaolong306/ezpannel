@@ -1,0 +1,338 @@
+@model IEnumerable<EZPannel.Api.Models.Database>
+@{    
+    ViewData["Title"] = "数据库管理";
+}
+
+<style>
+    .modal-backdrop {
+        background-color: rgba(0, 0, 0, 0.5);
+    }
+    
+    .modal-header {
+        border-bottom: 1px solid #e9ecef;
+    }
+    
+    .modal-footer {
+        border-top: 1px solid #e9ecef;
+    }
+    
+    .form-group {
+        margin-bottom: 1rem;
+    }
+</style>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">数据库列表</h5>
+                    <button id="createDatabaseBtn" class="btn btn-primary btn-sm">
+                        <i class="bi bi-plus-circle me-1"></i> 新建数据库
+                    </button>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>名称</th>
+                                    <th>主机</th>
+                                    <th>端口</th>
+                                    <th>用户名</th>
+                                    <th>类型</th>
+                                    <th>创建时间</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var item in Model)
+                                {
+                                    <tr>
+                                        <td>
+                                            <a href="#" class="database-link" data-id="@item.Id" data-name="@item.Name">
+                                                @item.Name
+                                            </a>
+                                        </td>
+                                        <td>@item.Host</td>
+                                        <td>@item.Port</td>
+                                        <td>@item.Username</td>
+                                        <td>@item.Type</td>
+                                        <td>@item.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                                        <td>
+                                            <div class="btn-group" role="group">
+                                                <button class="btn btn-sm btn-primary edit-database" 
+                                                        data-id="@item.Id" 
+                                                        data-name="@item.Name" 
+                                                        data-host="@item.Host" 
+                                                        data-port="@item.Port" 
+                                                        data-username="@item.Username" 
+                                                        data-type="@item.Type" 
+                                                        data-description="@item.Description" 
+                                                      >
+                                                    <i class="bi bi-pencil"></i>
+                                                </button>
+                                                <a asp-action="Delete" asp-route-id="@item.Id" class="btn btn-sm btn-danger">
+                                                    <i class="bi bi-trash"></i>
+                                                </a>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 数据库管理模态窗口 -->
+<div class="modal fade" id="databaseManagementModal" tabindex="-1" aria-labelledby="databaseManagementModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg" style="max-width: 80%; max-height: 80vh;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="databaseManagementModalLabel">数据库管理</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" style="max-height: 60vh; overflow: hidden;">
+                <!-- Database view content will be loaded here -->
+                <div id="databaseViewContainer"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 数据库表单模态框 -->
+<div class="modal fade" id="databaseModal" tabindex="-1" aria-labelledby="databaseModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="databaseModalLabel">新建数据库</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="databaseForm" method="post">
+                @Html.AntiForgeryToken()
+                <div class="modal-body">
+                    <input type="hidden" id="id" name="Id" value="0">
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="name" class="form-label">数据库名称</label>
+                                <input type="text" class="form-control" id="name" name="Name" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="host" class="form-label">主机地址</label>
+                                <input type="text" class="form-control" id="host" name="Host" value="localhost">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="port" class="form-label">端口</label>
+                                <input type="number" class="form-control" id="port" name="Port" value="3306">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="username" class="form-label">用户名</label>
+                                <input type="text" class="form-control" id="username" name="Username" required>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="password" class="form-label">密码</label>
+                                <input type="password" class="form-control" id="password" name="Password">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="type" class="form-label">数据库类型</label>
+                                <select class="form-select" id="type" name="Type">
+                                    <option value="MySQL">MySQL</option>
+                                    <option value="PostgreSQL">PostgreSQL</option>
+                                    <option value="SQLServer">SQL Server</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="description" class="form-label">描述</label>
+                        <textarea class="form-control" id="description" name="Description" rows="3"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" id="testConnectionBtn" class="btn btn-info me-2">
+                        <i class="bi bi-wifi"></i> 测试连接
+                    </button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+@{await Html.RenderPartialAsync("../Shared/_SqlTerminal");}
+
+<script>
+    // 等待DOM加载完成和Bootstrap初始化
+    document.addEventListener('DOMContentLoaded', function() {
+        // 初始化模态框
+        const databaseModal = new bootstrap.Modal(document.getElementById('databaseModal'));
+        const databaseForm = document.getElementById('databaseForm');
+        const databaseModalLabel = document.getElementById('databaseModalLabel');
+        
+        // 新建数据库按钮点击事件
+        document.getElementById('createDatabaseBtn').addEventListener('click', function() {
+            // 重置表单
+            databaseForm.reset();
+            document.getElementById('id').value = '0';
+            document.getElementById('host').value = 'localhost';
+            document.getElementById('port').value = '3306';
+            // 更新模态框标题
+            databaseModalLabel.textContent = '新建数据库';
+            // 显示模态框
+            databaseModal.show();
+        });
+        
+        // 编辑数据库按钮点击事件
+        document.querySelectorAll('.edit-database').forEach(button => {
+            button.addEventListener('click', function() {
+                // 获取数据属性
+                const id = this.getAttribute('data-id');
+                const name = this.getAttribute('data-name');
+                const host = this.getAttribute('data-host');
+                const port = this.getAttribute('data-port');
+                const username = this.getAttribute('data-username');
+                const type = this.getAttribute('data-type');
+                const description = this.getAttribute('data-description') || '';
+                // 填充表单
+                document.getElementById('id').value = id;
+                document.getElementById('name').value = name;
+                document.getElementById('host').value = host;
+                document.getElementById('port').value = port;
+                document.getElementById('username').value = username;
+                document.getElementById('type').value = type;
+                document.getElementById('description').value = description;
+                // 更新模态框标题
+                databaseModalLabel.textContent = '编辑数据库';
+                // 显示模态框
+                databaseModal.show();
+            });
+        });
+        
+        // 测试连接按钮点击事件
+        document.getElementById('testConnectionBtn').addEventListener('click', async function() {
+            // 获取表单数据
+            const name = document.getElementById('name').value;
+            const host = document.getElementById('host').value;
+            const port = document.getElementById('port').value;
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const type = document.getElementById('type').value;
+            
+            // 简单验证
+            if (!host || !port || !username) {
+                alert('请填写主机、端口和用户名');
+                return;
+            }
+            
+            // 禁用按钮并显示加载状态
+            const btn = this;
+            const originalText = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="bi bi-hourglass-split"></i> 测试中...';
+            
+            try {
+                const response = await fetch('/Database/TestConnection', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: JSON.stringify({
+                        Name: name,
+                        Host: host,
+                        Port: parseInt(port),
+                        Username: username,
+                        Password: password,
+                        Type: type
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    alert('连接成功！');
+                } else {
+                    alert('连接失败: ' + result.message);
+                }
+            } catch (error) {
+                console.error('测试连接失败:', error);
+                alert('连接测试失败，请检查网络或服务器配置');
+            } finally {
+                // 恢复按钮状态
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            }
+        });
+        
+        // 表单提交事件
+        databaseForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            const id = document.getElementById('id').value;
+            
+            try {
+                let url = '/Database/Create';
+                if (id !== '0') {
+                    url = `/Database/Edit?id=${id}`;
+                }
+                
+                const response = await fetch(url, {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+                
+                if (response.ok) {
+                    // 关闭模态框
+                    databaseModal.hide();
+                    // 刷新页面
+                    location.reload();
+                } else {
+                    const error = await response.text();
+                    alert('操作失败: ' + error);
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('操作失败，请重试');
+            }
+        });
+
+        // 数据库链接点击事件 - 直接打开SQL终端
+        document.querySelectorAll('.database-link').forEach(link => {
+            link.addEventListener('click', function(e) {
+                e.preventDefault();
+                
+                const id = this.getAttribute('data-id');
+                
+                // 直接打开SQL终端
+                openSqlTerminal(id);
+            });
+        });
+    });
+</script>

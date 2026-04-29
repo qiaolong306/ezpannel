@@ -1,0 +1,818 @@
+@{    Layout="/Views/Shared/_ServerLayout.cshtml";    
+ViewData["Title"] = "文件管理";    ViewData["ActiveMenu"] = "servers";    var serverId = ViewBag.ServerId;
+string os = ViewData["ServerVersion"] as string;
+}
+
+<div>
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="mb-0">文件管理</h2>
+        <div class="d-flex gap-2">
+            <button class="btn btn-sm btn-outline-secondary" id="refreshBtn">
+                <i class="bi bi-arrow-clockwise"></i> 刷新
+            </button>
+        </div>
+    </div>
+    
+    <!-- 文件路径导航 -->
+    <div class="mb-4">
+        <nav class="breadcrumb">
+            <ol class="breadcrumb" id="breadcrumb">
+                <!-- 路径导航将通过JavaScript动态生成 -->
+            </ol>
+        </nav>
+    </div>
+
+    <!-- 上传文件模态框 -->
+    <div class="modal fade" id="uploadModal" tabindex="-1" aria-labelledby="uploadModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="uploadModalLabel">上传文件</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="uploadForm">
+                        <div class="mb-3">
+                            <input type="file" class="form-control" id="fileInput" multiple>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" id="uploadBtn">上传</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 新建文件夹模态框 -->
+    <div class="modal fade" id="newFolderModal" tabindex="-1" aria-labelledby="newFolderModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="newFolderModalLabel">新建文件夹</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="newFolderForm">
+                        <div class="mb-3">
+                            <label for="folderName" class="form-label">文件夹名称</label>
+                            <input type="text" class="form-control" id="folderName" required>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" id="createFolderBtn">创建</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 新建文件模态框 -->
+    <div class="modal fade" id="newFileModal" tabindex="-1" aria-labelledby="newFileModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="newFileModalLabel">新建文件</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="newFileForm">
+                        <div class="mb-3">
+                            <label for="fileName" class="form-label">文件名称</label>
+                            <input type="text" class="form-control" id="fileName" required>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" id="createFileBtn">创建</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 文件编辑器模态框 -->
+    <div class="modal fade" id="editorModal" tabindex="-1" aria-labelledby="editorModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="editorModalLabel">编辑文件</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="fileContent" class="form-label">文件内容</label>
+                        <textarea class="form-control" id="fileContent" rows="20"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" id="saveFileBtn">保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 文件操作工具栏 -->
+    <div class="mb-4">
+        <div class="d-flex flex-wrap gap-2">
+            <button class="btn btn-sm btn-outline-secondary" id="newFolderBtn">
+                <i class="bi bi-folder-plus"></i> 新建文件夹
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" id="newFileBtn">
+                <i class="bi bi-file-plus"></i> 新建文件
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" id="uploadBtn">
+                <i class="bi bi-upload"></i> 上传文件
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" id="downloadBtn">
+                <i class="bi bi-download"></i> 下载文件
+            </button>
+            <button class="btn btn-sm btn-outline-danger" id="deleteBtn">
+                <i class="bi bi-trash"></i> 删除
+            </button>
+            <button class="btn btn-sm btn-outline-info" id="openTerminalBtn">
+                <i class="bi bi-terminal"></i> 打开终端
+            </button>
+        </div>
+    </div>
+    
+    <!-- 文件列表 -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" class="form-check-input" id="selectAllFiles"></th>
+                            <th>名称</th>
+                            <th>大小</th>
+                            <th>修改时间</th>
+                            <th>权限</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="fileList">
+                        <!-- 文件列表将通过JavaScript动态生成 -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+
+</div>
+
+@section Scripts {
+    <script>
+        // 文件管理相关功能
+        const serverId = @serverId;
+        let currentPath = '/';
+        let editingFilePath = '';
+        
+        // 初始化页面
+        document.addEventListener('DOMContentLoaded', function() {
+            loadFiles(currentPath);
+            setupEventListeners();
+        });
+        
+        // 设置事件监听器
+        function setupEventListeners() {
+            // 刷新按钮
+            document.getElementById('refreshBtn').addEventListener('click', function() {
+                loadFiles(currentPath);
+            });
+            
+            // 新建文件夹按钮
+            document.getElementById('newFolderBtn').addEventListener('click', function() {
+                const modal = new bootstrap.Modal(document.getElementById('newFolderModal'));
+                modal.show();
+            });
+            
+            // 创建文件夹按钮
+            document.getElementById('createFolderBtn').addEventListener('click', createFolder);
+            
+            // 新建文件按钮
+            document.getElementById('newFileBtn').addEventListener('click', function() {
+                const modal = new bootstrap.Modal(document.getElementById('newFileModal'));
+                modal.show();
+            });
+            
+            // 创建文件按钮
+            document.getElementById('createFileBtn').addEventListener('click', createFile);
+            
+            // 上传文件按钮
+            document.getElementById('uploadBtn').addEventListener('click', function() {
+                const modal = new bootstrap.Modal(document.getElementById('uploadModal'));
+                modal.show();
+            });
+            
+            // 执行上传按钮
+            document.querySelector('#uploadModal #uploadBtn').addEventListener('click', uploadFile);
+            
+            // 下载文件按钮
+            document.getElementById('downloadBtn').addEventListener('click', downloadSelectedFiles);
+            
+            // 删除文件按钮
+            document.getElementById('deleteBtn').addEventListener('click', deleteSelectedFiles);
+            
+            // 保存文件按钮
+            document.getElementById('saveFileBtn').addEventListener('click', saveFileContent);
+            
+            // 打开终端按钮
+            document.getElementById('openTerminalBtn').addEventListener('click', function() {
+                openTerminalAtPath(currentPath);
+            });
+            
+            // 全选/取消全选
+            document.getElementById('selectAllFiles').addEventListener('change', function() {
+                const checkboxes = document.querySelectorAll('#fileList input[type="checkbox"]');
+                checkboxes.forEach(checkbox => {
+                    checkbox.checked = this.checked;
+                });
+            });
+        }
+        
+        // 加载文件列表
+        function loadFiles(path) {
+            fetch(`/api/Files/${serverId}/list?path=${encodeURIComponent(path)}`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('加载文件列表失败');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    renderFiles(data);
+                    renderBreadcrumb(path);
+                    currentPath = path;
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('加载文件列表失败: ' + error.message);
+                });
+        }
+        
+        // 渲染文件列表
+        function renderFiles(files) {
+            console.log(files);
+            const fileList = document.getElementById('fileList');
+            fileList.innerHTML = '';
+            
+            files.forEach(file => {
+                const row = document.createElement('tr');
+                
+                // 复选框
+                const checkboxCell = document.createElement('td');
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.className = 'form-check-input';
+                checkbox.value = file.path;
+                checkboxCell.appendChild(checkbox);
+                row.appendChild(checkboxCell);
+                
+                // 文件名/文件夹名
+                const nameCell = document.createElement('td');
+                const nameDiv = document.createElement('div');
+                nameDiv.className = 'd-flex align-items-center';
+                
+                const icon = document.createElement('i');
+                const isDir = file.isDirectory === true;
+                const fileName = file.name || '未知名称';
+                
+                if (isDir) {
+                    icon.className = 'bi bi-folder text-warning me-2';
+                    const link = document.createElement('a');
+                    link.href = '#';
+                    link.className = 'text-decoration-none';
+                    link.textContent = fileName;
+                    link.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        loadFiles(file.path || currentPath);
+                    });
+                    nameDiv.appendChild(icon);
+                    nameDiv.appendChild(link);
+                } else {
+                    icon.className = fileName.endsWith('.sh') || fileName.endsWith('.py') ? 'bi bi-file-code text-info me-2' : 'bi bi-file text-secondary me-2';
+                    const span = document.createElement('span');
+                    span.textContent = fileName;
+                    nameDiv.appendChild(icon);
+                    nameDiv.appendChild(span);
+                }
+                nameCell.appendChild(nameDiv);
+                row.appendChild(nameCell);
+                
+                // 文件大小
+                const sizeCell = document.createElement('td');
+                sizeCell.textContent = file.isDirectory ? '-' : formatSize(file.size);
+                row.appendChild(sizeCell);
+                
+                // 修改时间
+                const timeCell = document.createElement('td');
+                try {
+                    const date = new Date(file.lastModified);
+                    timeCell.textContent = isNaN(date.getTime()) ? '未知时间' : date.toLocaleString();
+                } catch (e) {
+                    timeCell.textContent = '未知时间';
+                }
+                row.appendChild(timeCell);
+                
+                // 权限
+                const permissionCell = document.createElement('td');
+                permissionCell.textContent = file.permissions || '未知权限';
+                row.appendChild(permissionCell);
+                
+                // 操作按钮
+                const actionCell = document.createElement('td');
+                const btnGroup = document.createElement('div');
+                btnGroup.className = 'btn-group btn-group-sm';
+                
+                if (file.IsDirectory) {
+                    // 文件夹操作
+                    const openBtn = document.createElement('button');
+                    openBtn.className = 'btn btn-outline-secondary';
+                    openBtn.innerHTML = '<i class="bi bi-folder-open"></i>';
+                    openBtn.title = '打开文件夹';
+                    openBtn.addEventListener('click', function() {
+                        loadFiles(file.path);
+                    });
+                    btnGroup.appendChild(openBtn);
+                } else {
+                    // 文件操作
+                    const viewBtn = document.createElement('button');
+                    viewBtn.className = 'btn btn-outline-secondary';
+                    viewBtn.innerHTML = '<i class="bi bi-eye"></i>';
+                    viewBtn.title = '查看文件';
+                    viewBtn.addEventListener('click', function() {
+                        viewFile(file.path);
+                    });
+                    btnGroup.appendChild(viewBtn);
+                    
+                    const editBtn = document.createElement('button');
+                    editBtn.className = 'btn btn-outline-secondary';
+                    editBtn.innerHTML = '<i class="bi bi-pencil"></i>';
+                    editBtn.title = '编辑文件';
+                    editBtn.addEventListener('click', function() {
+                        editFile(file.path);
+                    });
+                    btnGroup.appendChild(editBtn);
+                    
+                    const downloadBtn = document.createElement('button');
+                    downloadBtn.className = 'btn btn-outline-secondary';
+                    downloadBtn.innerHTML = '<i class="bi bi-download"></i>';
+                    downloadBtn.title = '下载文件';
+                    downloadBtn.addEventListener('click', function() {
+                        downloadFile(file.path);
+                    });
+                    btnGroup.appendChild(downloadBtn);
+                }
+                
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'btn btn-outline-danger';
+                deleteBtn.innerHTML = '<i class="bi bi-trash"></i>';
+                deleteBtn.title = '删除';
+                deleteBtn.addEventListener('click', function() {
+                    deleteFile(file.path, file.isDirectory);
+                });
+                btnGroup.appendChild(deleteBtn);
+                
+                // 打开终端按钮
+                const terminalBtn = document.createElement('button');
+                terminalBtn.className = 'btn btn-outline-info';
+                terminalBtn.innerHTML = '<i class="bi bi-terminal"></i>';
+                terminalBtn.title = '打开终端';
+                terminalBtn.addEventListener('click', function() {
+                    tmppath = file.path;
+                    if(file.isDirectory){
+                        tmppath = tmppath + '/'+file.name;
+                    }
+                    openTerminalAtPath(tmppath);
+                });
+                btnGroup.appendChild(terminalBtn);
+                
+                actionCell.appendChild(btnGroup);
+                row.appendChild(actionCell);
+                
+                fileList.appendChild(row);
+            });
+        }
+        
+        // 渲染路径导航
+        function renderBreadcrumb(path) {
+            const breadcrumb = document.getElementById('breadcrumb');
+            breadcrumb.innerHTML = '';
+            
+            // 根目录
+            const homeItem = document.createElement('li');
+            homeItem.className = 'breadcrumb-item';
+            const homeLink = document.createElement('a');
+            homeLink.href = '#';
+            homeLink.textContent = '文件根';
+            homeLink.addEventListener('click', function(e) {
+                e.preventDefault();
+                loadFiles('/');
+            });
+            homeItem.appendChild(homeLink);
+            breadcrumb.appendChild(homeItem);
+            
+            if (path !== '/') {
+                const parts = path.split('/').filter(part => part);
+                let currentPath = '';
+                
+                parts.forEach((part, index) => {
+                    const tempPath = currentPath + '/' + part;
+                    
+                    const item = document.createElement('li');
+                    item.className = index === parts.length - 1 ? 'breadcrumb-item active' : 'breadcrumb-item';
+                    item.setAttribute('aria-current', index === parts.length - 1 ? 'page' : '');
+                    
+                    if (index === parts.length - 1) {
+                        item.textContent = part;
+                    } else {
+                        const link = document.createElement('a');
+                        link.href = 'javascript:void(0);';
+                        link.textContent = part;
+                        link.addEventListener('click', function(e) {
+                            e.preventDefault();
+                            loadFiles(tempPath);
+                        });
+                        item.appendChild(link);
+                    }
+                    
+                    currentPath = tempPath;
+                    breadcrumb.appendChild(item);
+                });
+            }
+        }
+        
+        // 格式化文件大小
+        function formatSize(bytes) {
+            if (bytes === 0 || isNaN(bytes) || bytes === undefined) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+        
+        // 创建文件夹
+        function createFolder() {
+            const folderName = document.getElementById('folderName').value.trim();
+            if (!folderName) {
+                alert('请输入文件夹名称');
+                return;
+            }
+            
+            // 构建文件夹路径
+            const folderPath = currentPath === '/' ? '/' + folderName : currentPath + '/' + folderName;
+            
+            // 调用API创建文件夹
+            fetch(`/api/Files/${serverId}/mkdir?path=${encodeURIComponent(folderPath)}`, {
+                method: 'POST'
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('创建文件夹失败');
+                }
+            })
+            .then(() => {
+                // 关闭模态框
+                const modal = bootstrap.Modal.getInstance(document.getElementById('newFolderModal'));
+                modal.hide();
+                
+                // 清空输入框
+                document.getElementById('folderName').value = '';
+                
+                // 刷新文件列表
+                loadFiles(currentPath);
+                
+                alert('文件夹创建成功');
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('创建文件夹失败: ' + error.message);
+            });
+        }
+        
+        // 创建文件
+        function createFile() {
+            const fileName = document.getElementById('fileName').value.trim();
+            if (!fileName) {
+                alert('请输入文件名称');
+                return;
+            }
+            
+            const filePath = currentPath === '/' ? '/' + fileName : currentPath + '/' + fileName;
+            
+            // 先创建空文件，然后打开编辑
+            fetch(`/api/Files/${serverId}/save`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    Path: filePath,
+                    Content: ''
+                })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('创建文件失败');
+                }
+            })
+            .then(() => {
+                // 关闭模态框
+                const modal = bootstrap.Modal.getInstance(document.getElementById('newFileModal'));
+                modal.hide();
+                
+                // 清空输入框
+                document.getElementById('fileName').value = '';
+                
+                // 打开文件编辑器
+                editFile(filePath);
+                
+                // 刷新文件列表
+                loadFiles(currentPath);
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('创建文件失败: ' + error.message);
+            });
+        }
+        
+        // 上传文件
+        function uploadFile() {
+            const fileInput = document.getElementById('fileInput');
+            const files = fileInput.files;
+            
+            if (files.length === 0) {
+                alert('请选择要上传的文件');
+                return;
+            }
+            
+            const formData = new FormData();
+            for (let i = 0; i < files.length; i++) {
+                formData.append('file', files[i]);
+            }
+            
+            fetch(`/api/Files/${serverId}/upload?path=${encodeURIComponent(currentPath)}`, {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('上传文件失败');
+                }
+            })
+            .then(() => {
+                // 关闭模态框
+                const modal = bootstrap.Modal.getInstance(document.getElementById('uploadModal'));
+                modal.hide();
+                
+                // 清空文件输入
+                fileInput.value = '';
+                
+                // 刷新文件列表
+                loadFiles(currentPath);
+                
+                alert('文件上传成功');
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('上传文件失败: ' + error.message);
+            });
+        }
+        
+        // 下载单个文件
+        function downloadFile(path) {
+            window.open(`/api/Files/${serverId}/download?path=${encodeURIComponent(path)}`, '_blank');
+        }
+        
+        // 下载选中的文件
+        function downloadSelectedFiles() {
+            const checkboxes = document.querySelectorAll('#fileList input[type="checkbox"]:checked');
+            if (checkboxes.length === 0) {
+                alert('请选择要下载的文件');
+                return;
+            }
+            
+            checkboxes.forEach(checkbox => {
+                downloadFile(checkbox.value);
+            });
+        }
+        
+        // 删除单个文件
+        function deleteFile(path, isDirectory) {
+            if (!confirm('确定要删除吗？')) {
+                return;
+            }
+            
+            fetch(`/api/Files/${serverId}?path=${encodeURIComponent(path)}&isDirectory=${isDirectory}`, {
+                method: 'DELETE'
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('删除文件失败');
+                }
+            })
+            .then(() => {
+                // 刷新文件列表
+                loadFiles(currentPath);
+                alert('删除成功');
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('删除文件失败: ' + error.message);
+            });
+        }
+        
+        // 删除选中的文件
+        function deleteSelectedFiles() {
+            const checkboxes = document.querySelectorAll('#fileList input[type="checkbox"]:checked');
+            if (checkboxes.length === 0) {
+                alert('请选择要删除的文件');
+                return;
+            }
+            
+            if (!confirm(`确定要删除选中的 ${checkboxes.length} 个文件/文件夹吗？`)) {
+                return;
+            }
+            
+            // 这里应该批量删除，但是API可能不支持，所以逐个删除
+            checkboxes.forEach(checkbox => {
+                const path = checkbox.value;
+                // 从文件列表中查找该文件/文件夹的信息
+                const row = checkbox.closest('tr');
+                const isDirectory = row.querySelector('.bi-folder') !== null;
+                deleteFile(path, isDirectory);
+            });
+        }
+        
+        // 查看文件内容
+        function viewFile(path) {
+            //如果是目录，提示不能查看内容
+            if (isDirectory(path)) {
+                alert('目录不能查看内容');
+                return;
+            }
+            
+            fetch(`/api/Files/${serverId}/content?path=${encodeURIComponent(path)}`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('获取文件内容失败');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    const modal = new bootstrap.Modal(document.getElementById('editorModal'));
+                    document.getElementById('fileContent').value = data.content;
+                    editingFilePath = path;
+                    modal.show();
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('获取文件内容失败: ' + error.message);
+                });
+        }
+        
+        // 编辑文件
+        function editFile(path) {
+                       //如果是目录，提示不能查看内容
+            if (isDirectory(path)) {
+                alert('目录不能查看内容');
+                return;
+            }
+            fetch(`/api/Files/${serverId}/content?path=${encodeURIComponent(path)}`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('获取文件内容失败');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    const modal = new bootstrap.Modal(document.getElementById('editorModal'));
+                    document.getElementById('fileContent').value = data.content;
+                    editingFilePath = path;
+                    modal.show();
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('获取文件内容失败: ' + error.message);
+                });
+        }
+        
+        // 保存文件内容
+        function saveFileContent() {
+            const content = document.getElementById('fileContent').value;
+            
+            fetch(`/api/Files/${serverId}/save`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    Path: editingFilePath,
+                    Content: content
+                })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('保存文件失败');
+                }
+            })
+            .then(() => {
+                // 关闭模态框
+                const modal = bootstrap.Modal.getInstance(document.getElementById('editorModal'));
+                modal.hide();
+                
+                // 刷新文件列表
+                loadFiles(currentPath);
+                alert('文件保存成功');
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('保存文件失败: ' + error.message);
+            });
+        }
+
+
+function isDirectory(path) {
+  // 空路径直接返回 false
+  if (!path || typeof path !== 'string') return false;
+
+  // 去除首尾空格（避免误判）
+  const trimmedPath = path.trim();
+
+  // 1. 匹配明确的目录结尾特征（优先级最高）
+  // 匹配 Linux/macOS 结尾 / 、Windows 结尾 \ 或 / 、Windows 盘符（如 C:）
+  const dirEndRegex = /(^\/$)|(\/|\\)$|^[a-zA-Z]:$/;
+  if (dirEndRegex.test(trimmedPath)) {
+    return true;
+  }
+
+  // 2. 匹配无扩展名且非文件的路径（兼容无结尾分隔符的目录）
+  // 排除常见文件扩展名（可根据需求扩展）
+  const fileExtRegex = /\.[a-zA-Z0-9]{1,6}$/; // 匹配 .txt、.js、.png 等扩展名
+  // 排除 Windows 设备路径（如 NUL、CON 等）和空文件名
+  const windowsDeviceRegex = /^[a-zA-Z]:\\?(NUL|CON|PRN|AUX|COM[1-9]|LPT[1-9])$/i;
+  
+  // 无文件扩展名 + 不是 Windows 设备路径 → 判定为目录
+  if (!fileExtRegex.test(trimmedPath) && !windowsDeviceRegex.test(trimmedPath)) {
+    return true;
+  }
+
+  // 3. 其他情况判定为文件
+  return false;
+}
+        
+        // 在指定路径打开终端
+        function openTerminalAtPath(filePath) {
+            // 确定要切换到的目录
+            let targetDirectory = filePath;
+            
+            // 如果是文件路径，则取其父目录
+            if (!filePath.endsWith('/')) {
+                targetDirectory = filePath.substring(0, filePath.lastIndexOf('/'));
+            }
+            
+            // 如果是根目录，确保格式正确
+            if (targetDirectory === '') {
+                targetDirectory = '/';
+            }
+            
+            // 获取服务器名称（这里使用默认名称，实际应用中应该从服务器数据中获取）
+            const serverName = '服务器 ' + serverId;
+            
+            // 打开浮动终端
+            openFloatingTerminal(serverId, serverName);
+            
+            // 等待终端连接后发送切换目录命令
+            setTimeout(() => {
+                if (floatingConnections[serverId] && floatingConnections[serverId].state === 'Connected') {
+                    var os =@Html.Raw(Json.Serialize(os));
+                    //如果是linux
+                    if (os == "Windows") {
+                        //去掉开始的/
+                        targetDirectory = targetDirectory.replace(/^\/+/, '');
+                          // 发送切换目录命令
+                    const command = `cd ${targetDirectory}\r`;
+                    floatingConnections[serverId].send("SendData", command);
+                    
+                    // 发送ls命令显示当前目录内容
+                    floatingConnections[serverId].send("SendData", "dir\r");
+                    }else{
+                    // 发送切换目录命令
+                    const command = `cd ${targetDirectory}\r`;
+                    floatingConnections[serverId].send("SendData", command);
+                    
+                    // 发送ls命令显示当前目录内容
+                    floatingConnections[serverId].send("SendData", "ls -la\r");
+                    }
+
+
+                }
+            }, 1000);
+        }
+    </script>
+}

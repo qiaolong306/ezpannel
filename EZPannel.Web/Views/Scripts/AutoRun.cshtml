@@ -1,0 +1,349 @@
+@model dynamic
+@{    
+    ViewData["Title"] = "自动任务管理";
+    var autoRuns = (IEnumerable<EZPannel.Api.Models.ScriptAutoRunModel>)Model.AutoRuns;
+    var scripts = (IEnumerable<EZPannel.Api.Models.Script>)Model.Scripts;
+    var servers = (IEnumerable<EZPannel.Api.Models.Server>)Model.Servers;
+}
+
+<style>
+    .btn-icon-text {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 6px 12px;
+        border-radius: 8px;
+        font-size: 13px;
+        text-decoration: none !important;
+        transition: 0.2s;
+    }
+    .btn-run { background-color: #f0f9eb; color: #67c23a; }
+    .btn-run:hover { background-color: #67c23a; color: #fff; }
+    .btn-edit { background-color: #ecf5ff; color: #409eff; }
+    .btn-edit:hover { background-color: #409eff; color: #fff; }
+    .btn-delete { background-color: #fef0f0; color: #f56c6c; }
+    .btn-delete:hover { background-color: #f56c6c; color: #fff; }
+    
+    .server-tag {
+        display: inline-block;
+        background-color: #e0f7fa;
+        color: #00838f;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 12px;
+        margin-right: 4px;
+        margin-bottom: 4px;
+    }
+    
+    .cron-expression {
+        font-family: monospace;
+        background-color: #f5f5f5;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 12px;
+    }
+    
+    .script-card {
+        border: none;
+        border-radius: 12px;
+    }
+</style>
+
+<div class="container-fluid p-4">
+    <div class="card border-0 shadow-sm script-card">
+        <div class="card-header border-0 bg-white pt-3 px-3 d-flex justify-content-between align-items-center">
+            <div>
+                <h5 class="mb-0 fw-bold">自动任务管理</h5>
+                <p class="text-muted small mb-0">管理脚本的定时自动执行任务</p>
+            </div>
+            <button class="btn btn-primary px-3 rounded-pill" onclick="addNewAutoRun()">
+                <i class="bi bi-plus-lg me-1"></i> 新增自动任务
+            </button>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th class="ps-3 border-0">名称</th>
+                            <th class="border-0">脚本</th>
+                            <th class="border-0">是否自动运行</th>
+                            <th class="border-0">执行服务器</th>
+                            <th class="border-0">上次运行时间</th>
+                            <th class="pe-3 border-0 text-end">操作</th>
+                        </tr>
+                    </thead>
+                <tbody id="autoRunTableBody">
+                    @foreach (var autoRun in autoRuns)
+                    {
+                        var script = scripts.FirstOrDefault(s => s.Id == autoRun.ScriptId);
+                        <tr>
+                            <td class="ps-3">
+                                <div class="fw-medium">@autoRun.Name</div>
+                            </td>
+                            <td>
+                                <span class="badge bg-primary">@(script?.Name ?? "未知脚本")</span>
+                            </td>
+                            <td>
+                                @if (autoRun.IsAutoRun)
+                                {
+                                    <span class="text-success" title="自动运行">
+                                        <i class="bi bi-play-circle-fill"></i>
+                                    </span>
+                                }else{
+                                    <span class="text-danger" title="不自动运行">
+                                        <i class="bi bi-pause-circle-fill"></i>
+                                    </span>
+                                }
+                            </td>
+                            <td>
+                                @if (autoRun.ServerIds != null && autoRun.ServerIds.Count > 0)
+                                {
+                                    @foreach (var serverId in autoRun.ServerIds)
+                                    {
+                                        var server = servers.FirstOrDefault(s => s.Id == serverId);
+                                        <span class="server-tag">@(server?.Name ?? serverId.ToString())</span>
+                                    }
+                                }
+                                else
+                                {
+                                    <span class="text-success">所有服务器</span>
+                                }
+                            </td>
+                            <td class="text-muted small">
+                                @if (autoRun.LastRunTime != DateTime.MinValue)
+                                {
+                                    <span>@autoRun.LastRunTime.ToString("yyyy-MM-dd HH:mm")</span>
+                                }
+                                else
+                                {
+                                    <span>从未运行</span>
+                                }
+                            </td>
+                            <td class="pe-3 text-end">
+                                <div class="d-flex justify-content-end gap-2 align-items-center">
+                                    <button class="btn-icon-text btn-run" onclick="executeAutoRun(@autoRun.Id)">
+                                        <i class="bi bi-play-fill"></i>执行
+                                    </button>
+                                    <button class="btn-icon-text btn-edit" onclick="editAutoRun(@autoRun.Id)">
+                                        <i class="bi bi-pencil-square"></i>编辑
+                                    </button>
+                                    <button class="btn-icon-text btn-delete" onclick="deleteAutoRun(@autoRun.Id)">
+                                        <i class="bi bi-trash"></i>删除
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Add/Edit AutoRun Modal -->
+<div class="modal fade" id="autoRunModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <form id="autoRunForm" class="modal-content" method="post" action="/Scripts/AutoRun">
+            <div class="modal-header">
+                <h5 class="modal-title" id="autoRunModalTitle">新增自动任务</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" name="Id" value="0">
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label">任务名称</label>
+                        <input type="text" class="form-control" name="Name" required placeholder="如：每日备份数据库">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">执行脚本</label>
+                        <select class="form-select" name="ScriptId" required>
+                            <option value="">-- 选择脚本 --</option>
+                            @foreach (var script in scripts)
+                            {
+                                <option value="@script.Id">@script.Name (@script.Type)</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-12">
+                        <label class="form-label">任务描述</label>
+                        <textarea class="form-control" name="Description" rows="2" placeholder="描述此自动任务的功能"></textarea>
+                    </div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-6" id="cronExpressionContainer">
+                        <label class="form-label">时间表达式 (Cron格式)</label>
+                        <input type="text" class="form-control" name="CronExpression" value="0 0 * * *" placeholder="如：0 0 * * *">
+                        <div class="text-muted small mt-1">格式：分 时 日 月 周</div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">执行设置</label>
+                        <div class="form-check mt-2">
+                            <input class="form-check-input" type="checkbox" name="IsAutoRun" value="true" id="IsAutoRun" onchange="toggleCronExpression()">
+                            <label class="form-check-label" for="IsAutoRun">自动运行</label>
+                        </div>
+                    </div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-12">
+                        <label class="form-label">执行服务器</label>
+                        <div class="border rounded p-3" id="serverSelection">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="selectAllServers" onchange="toggleSelectAllServers()">
+                                <label class="form-check-label" for="selectAllServers">所有服务器</label>
+                            </div>
+                            <div class="mt-2 server-list">
+                                @foreach (var server in servers)
+                                {
+                                    <div class="form-check form-check-inline">
+                                        <input class="form-check-input server-checkbox" type="checkbox" name="ServerIds" value="@server.Id" id="server_@server.Id">
+                                        <label class="form-check-label" for="server_@server.Id">@server.Name (@server.Host)</label>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="submit" class="btn btn-primary">保存</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    let currentEditAutoRunId = 0;
+    let servers = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(servers));
+    let scripts = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(scripts));
+
+    function addNewAutoRun() {
+        document.getElementById('autoRunModalTitle').innerText = '新增自动任务';
+        const form = document.getElementById('autoRunForm');
+        form.reset();
+        form.querySelector('[name="Id"]').value = 0;
+        document.getElementById('selectAllServers').checked = false;
+        document.getElementById('IsAutoRun').checked = false;
+        toggleSelectAllServers();
+        toggleCronExpression();
+        new bootstrap.Modal(document.getElementById('autoRunModal')).show();
+    }
+
+    async function editAutoRun(id) {
+        try {
+            const res = await axios.get('/Scripts/AutoRun/' + id);
+            const autoRun = res.data;
+
+            document.getElementById('autoRunModalTitle').innerText = '编辑自动任务';
+            const form = document.getElementById('autoRunForm');
+            form.querySelector('[name="Id"]').value = autoRun.id;
+            form.querySelector('[name="Name"]').value = autoRun.name;
+            form.querySelector('[name="Description"]').value = autoRun.description;
+            form.querySelector('[name="ScriptId"]').value = autoRun.scriptId;
+            form.querySelector('[name="CronExpression"]').value = autoRun.cronExpression;
+            form.querySelector('[name="IsAutoRun"]').checked = autoRun.isAutoRun;
+            toggleCronExpression();
+            
+            // 清空服务器选择
+            document.querySelectorAll('.server-checkbox').forEach(checkbox => {
+                checkbox.checked = false;
+            });
+            
+            // 设置服务器选择
+            if (autoRun.serverIds && autoRun.serverIds.length > 0) {
+                document.getElementById('selectAllServers').checked = false;
+                autoRun.serverIds.forEach(serverId => {
+                    const checkbox = document.getElementById('server_' + serverId);
+                    if (checkbox) checkbox.checked = true;
+                });
+                toggleSelectAllServers();
+            } else {
+                document.getElementById('selectAllServers').checked = true;
+                toggleSelectAllServers();
+            }
+            
+            new bootstrap.Modal(document.getElementById('autoRunModal')).show();
+        } catch (err) {
+            alert('获取自动任务详情失败: ' + err.message);
+        }
+    }
+
+    async function deleteAutoRun(id) {
+        if (!confirm('确定要删除该自动任务吗？')) return;
+        try {
+            await axios.delete('/Scripts/AutoRun/' + id);
+            location.reload();
+        } catch (err) {
+            alert('删除失败: ' + err.message);
+        }
+    }
+
+    async function executeAutoRun(id) {
+        if (!confirm('确定要立即执行该自动任务吗？')) return;
+        try {
+            await axios.post('/Scripts/AutoRun/Execute/' + id);
+            toastr.success('自动任务执行成功');
+            setTimeout(() => location.reload(), 1000);
+        } catch (err) {
+            alert('执行失败: ' + err.message);
+        }
+    }
+
+    function toggleSelectAllServers() {
+        const selectAllCheckbox = document.getElementById('selectAllServers');
+        const serverCheckboxes = document.querySelectorAll('.server-checkbox');
+        const serverList = document.querySelector('.server-list');
+        
+        if (selectAllCheckbox.checked) {
+            serverCheckboxes.forEach(checkbox => {
+                checkbox.checked = false;
+                checkbox.disabled = true;
+            });
+            serverList.style.opacity = '0.5';
+        } else {
+            serverCheckboxes.forEach(checkbox => {
+                checkbox.disabled = false;
+            });
+            serverList.style.opacity = '1';
+        }
+    }
+    
+    function toggleCronExpression() {
+        const isAutoRun = document.getElementById('IsAutoRun').checked;
+        const cronContainer = document.getElementById('cronExpressionContainer');
+        const cronInput = cronContainer.querySelector('input[name="CronExpression"]');
+        
+        if (isAutoRun) {
+            cronContainer.style.display = 'block';
+            cronInput.required = true;
+        } else {
+            cronContainer.style.display = 'none';
+            cronInput.required = false;
+            cronInput.value = '';
+        }
+    }
+
+    // 表单提交前处理服务器ID
+    document.getElementById('autoRunForm').addEventListener('submit', function(e) {
+        // 移除旧的服务器ID输入
+        const oldInputs = document.querySelectorAll('[name="ServerIds[]"]');
+        oldInputs.forEach(input => input.remove());
+        
+        const selectAllCheckbox = document.getElementById('selectAllServers');
+        if (!selectAllCheckbox.checked) {
+            const selectedCheckboxes = document.querySelectorAll('.server-checkbox:checked');
+            selectedCheckboxes.forEach(checkbox => {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'ServerIds[]';
+                input.value = checkbox.value;
+                this.appendChild(input);
+            });
+        }
+    });
+</script>
+}

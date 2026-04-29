@@ -1,0 +1,24 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 18
+VisualStudioVersion = 18.3.11222.16
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EZPannel.Web", "EZPannel.Web\EZPannel.Web.csproj", "{2A2BE9AD-97AB-2B83-19D5-3F660611D7E5}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{2A2BE9AD-97AB-2B83-19D5-3F660611D7E5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2A2BE9AD-97AB-2B83-19D5-3F660611D7E5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2A2BE9AD-97AB-2B83-19D5-3F660611D7E5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2A2BE9AD-97AB-2B83-19D5-3F660611D7E5}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {1CABC0DC-17BB-4CAE-9350-F5C73F2FC2FB}
+	EndGlobalSection
+EndGlobal

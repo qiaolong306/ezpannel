@@ -1,0 +1,207 @@
+@using System
+@{    
+    ViewData["Title"] = "数据库还原";
+    @model List<EZPannel.Api.Models.BackupLog>
+}
+
+<div class="container-fluid">
+    <!-- 备份日志模块 -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">备份日志</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>配置名称</th>
+                                    <th>数据库</th>
+                                    <th>备份文件</th>
+                                    <th>文件大小</th>
+                                    <th>状态</th>
+                                    <th>备份时间</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @if (Model != null && Model.Any()){
+                                    @foreach (var log in Model)
+                                    {
+                                        <tr>
+                                            <td>
+                                                @(log.DatabaseConfigName ?? "未知配置名称")
+                                            </td>
+                                            <td>@(log.DatabaseName ?? "未知数据库")</td>
+                                            <td>
+                                                @if (!string.IsNullOrEmpty(log.FilePath))
+                                                {
+                                                    @System.IO.Path.GetFileName(log.FilePath)
+                                                }
+                                            </td>
+                                            <td>
+                                                @if (log.FileSize > 0)
+                                                {
+                                                    @((log.FileSize / 1024.0f / 1024.0f).ToString("f1") + " MB")
+                                                }
+                                            </td>
+                                            <td>
+                                                @if (log.IsSuccess)
+                                                {
+                                                    <span class="badge bg-success">成功</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="badge bg-danger">失败</span>
+                                                }
+                                            </td>
+                                            <td>@log.BackupTime.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                                            <td>
+                                                <div class="btn-group" role="group">
+                                                    @if (log.IsSuccess && !string.IsNullOrEmpty(log.FilePath))
+                                                    {
+                                                        <a href="@Url.Action("DownloadBackup", new { filePath = log.FilePath })" class="btn btn-sm btn-primary" title="下载">
+                                                            <i class="bi bi-download"></i>
+                                                        </a>
+                                                        <button class="btn btn-sm btn-warning" onclick="restoreDatabase(@log.Id)" title="还原">
+                                                            <i class="bi bi-arrow-clockwise"></i>
+                                                        </button>
+                                                    }
+                                                    <button class="btn btn-sm btn-info" onclick="showBackupDetail(@log.Id)" title="查看详情">
+                                                        <i class="bi bi-info-circle"></i>
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    }
+                                }
+                                else
+                                {
+                                    <tr>
+                                        <td colspan="6" class="text-center text-muted">暂无备份日志</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- 分页控件 -->
+                    @if (ViewBag.TotalPages > 1)
+                    {
+                        <nav aria-label="Page navigation">
+                            <ul class="pagination justify-content-center">
+                                <li class="page-item @(ViewBag.Page == 1 ? "disabled" : "")">
+                                    <a class="page-link" href="@Url.Action("Restore", new {page = 1, pageSize = ViewBag.PageSize })" aria-label="First">
+                                        <span aria-hidden="true">&laquo;&laquo;</span>
+                                    </a>
+                                </li>
+                                <li class="page-item @(ViewBag.Page == 1 ? "disabled" : "")">
+                                    <a class="page-link" href="@Url.Action("Restore", new {  page = ViewBag.Page - 1, pageSize = ViewBag.PageSize })" aria-label="Previous">
+                                        <span aria-hidden="true">&laquo;</span>
+                                    </a>
+                                </li>
+
+                                @{ int startPage = Math.Max(1, ViewBag.Page - 2); int endPage = Math.Min(ViewBag.TotalPages, ViewBag.Page + 2); }
+                                @for (int i = startPage; i <= endPage; i++)
+                                {
+                                    <li class="page-item @(i == ViewBag.Page ? "active" : "")">
+                                        <a class="page-link" href="@Url.Action("Restore", new {  page = i, pageSize = ViewBag.PageSize })">@i</a>
+                                    </li>
+                                }
+
+                                <li class="page-item @(ViewBag.Page == ViewBag.TotalPages ? "disabled" : "")">
+                                    <a class="page-link" href="@Url.Action("Restore", new { page = ViewBag.Page + 1, pageSize = ViewBag.PageSize })" aria-label="Next">
+                                        <span aria-hidden="true">&raquo;</span>
+                                    </a>
+                                </li>
+                                <li class="page-item @(ViewBag.Page == ViewBag.TotalPages ? "disabled" : "")">
+                                    <a class="page-link" href="@Url.Action("Restore", new { page = ViewBag.TotalPages, pageSize = ViewBag.PageSize })" aria-label="Last">
+                                        <span aria-hidden="true">&raquo;&raquo;</span>
+                                    </a>
+                                </li>
+                            </ul>
+                        </nav>
+                        <div class="text-center mt-2">
+                            <p class="text-muted">
+                                第 @ViewBag.Page 页，共 @ViewBag.TotalPages 页，总记录数：@ViewBag.TotalLogs
+                            </p>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 备份详情模态框 -->
+<div class="modal fade" id="backupDetailModal" tabindex="-1" aria-labelledby="backupDetailModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="backupDetailModalLabel">备份详情</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body"></div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // 还原数据库
+    function restoreDatabase(logId) {
+        if (confirm('确定要从备份中还原数据库吗？这将覆盖当前数据库的数据！')) {
+            $.ajax({
+                url: '@Url.Action("RestoreBackup")',
+                type: 'POST',
+                data: { logId: logId },
+                success: function(response) {
+                    if (response.success) {
+                        toastr.success('数据库还原成功');
+                    } else {
+                        var errorMsg = response.message || '数据库还原失败';
+                        toastr.error('数据库还原失败: ' + errorMsg);
+                    }
+                },
+                error: function(xhr) {
+                    var errorMsg = xhr.responseJSON?.message || '数据库还原失败';
+                    toastr.error('数据库还原失败: ' + errorMsg);
+                }
+            });
+        }
+    }
+
+    // 查看备份详情
+    function showBackupDetail(logId) {
+        $.ajax({
+            url: '@Url.Action("GetBackupLogs", new { logId = 0 })'.replace('0', logId),
+            type: 'GET',
+            success: function(response) {
+                if (response.success) {
+                    var log = response.log;
+                    var modal = $('#backupDetailModal');
+                    modal.find('.modal-title').text('备份详情');
+                    modal.find('.modal-body').html(`
+                        <div class="mb-2"><strong>配置名称:</strong> ${log.databaseConfigName}</div>
+                        <div class="mb-2"><strong>数据库:</strong> ${log.databaseName}</div>
+                        <div class="mb-2"><strong>备份时间:</strong> ${new Date(log.backupTime).toLocaleString()}</div>
+                        <div class="mb-2"><strong>状态:</strong> ${log.isSuccess ? '<span class="text-success">成功</span>' : '<span class="text-danger">失败</span>'}</div>
+                        ${log.filePath ? `<div class="mb-2"><strong>备份文件:</strong> ${log.filePath}</div>` : ''}
+                        ${log.fileSize > 0 ? `<div class="mb-2"><strong>文件大小:</strong> ${(log.fileSize / 1024 / 1024).toFixed(2)} MB</div>` : ''}
+                        ${log.message ? `<div class="mb-2"><strong>消息:</strong> ${log.message}</div>` : ''}
+                    `);
+                    modal.modal('show');
+                } else {
+                    toastr.error('获取备份详情失败');
+                }
+            },
+            error: function() {
+                toastr.error('获取备份详情失败');
+            }
+        });
+    }
+</script>

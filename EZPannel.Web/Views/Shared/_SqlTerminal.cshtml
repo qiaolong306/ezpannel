@@ -1,0 +1,904 @@
+
+<style>
+    .sql-terminal {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        background-color: #f8f9fa;
+        border-radius: 8px;
+        overflow: hidden;
+        display: none; /* 默认隐藏 */
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 80%;
+        max-width: 1000px;
+        height: 70vh;
+        z-index: 1050; /* 确保在模态框之上 */
+        box-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
+    }
+    
+    /* 背景遮罩 */
+    .sql-terminal-backdrop {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        z-index: 1040;
+        display: none;
+    }
+
+    .sql-terminal-header {
+        background-color: #343a40;
+        color: white;
+        padding: 12px 16px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .sql-terminal-connection-info {
+        font-size: 14px;
+        color: #adb5bd;
+    }
+
+    .sql-terminal-body {
+        flex: 1;
+        display: flex;
+        overflow: hidden;
+        height: calc(100% - 130px); /* 减去头部和底部的高度 */
+    }
+    
+    .saved-queries-panel {
+        width: 280px;
+        border-right: 1px solid #dee2e6;
+        background-color: #f8f9fa;
+        overflow-y: auto;
+        padding: 12px;
+        flex-shrink: 0;
+    }
+    
+    .saved-queries-title {
+        font-size: 14px;
+        font-weight: 600;
+        margin-bottom: 10px;
+        color: #343a40;
+    }
+    
+    .saved-query-item {
+        padding: 10px;
+        margin-bottom: 6px;
+        background-color: white;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    
+    .saved-query-item:hover {
+        background-color: #e9ecef;
+        border-color: #adb5bd;
+    }
+    
+    .saved-query-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 10px;
+        margin-bottom: 6px;
+        background-color: white;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    
+    .saved-query-name {
+        font-size: 13px;
+        font-weight: 500;
+        color: #495057;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    
+    .saved-query-actions {
+        display: none;
+        gap: 4px;
+    }
+    
+    .saved-query-item:hover .saved-query-actions {
+        display: flex;
+    }
+    
+    .btn-delete-query {
+        font-size: 12px;
+        padding: 2px 6px;
+        background-color: #dc3545;
+        color: white;
+        border: none;
+        border-radius: 3px;
+        cursor: pointer;
+    }
+    
+    .btn-delete-query:hover {
+        background-color: #c82333;
+    }
+    
+    .query-actions-container {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .sql-query-section {
+        border-bottom: 1px solid #dee2e6;
+        padding: 12px;
+        background-color: white;
+        flex-shrink: 0;
+    }
+
+    .sql-editor {
+        width: 100%;
+        max-height: 120px;
+        min-height: 100px;
+        padding: 10px;
+        font-family: 'Courier New', Courier, monospace;
+        font-size: 13px;
+        line-height: 1.4;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        resize: vertical;
+        margin-bottom: 8px;
+    }
+
+    .sql-editor:focus {
+        outline: none;
+        border-color: #0d6efd;
+        box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+    }
+
+    .sql-results-section {
+        flex: 1;
+        overflow: auto;
+        padding: 12px;
+        background-color: white;
+        max-height: calc(100% - 140px); /* 减去编辑器和头部的高度 */
+    }
+
+    .sql-results-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid #dee2e6;
+    }
+
+    .sql-results-info {
+        font-size: 14px;
+        color: #6c757d;
+    }
+
+    .sql-results-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 12px;
+        font-size: 13px;
+    }
+
+    .sql-results-table th {
+        background-color: #f8f9fa;
+        border: 1px solid #dee2e6;
+        padding: 6px 8px;
+        text-align: left;
+        font-weight: 600;
+        white-space: nowrap;
+        font-size: 12px;
+    }
+
+    .sql-results-table td {
+        border: 1px solid #dee2e6;
+        padding: 6px 8px;
+        max-width: 150px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .sql-results-table tr:hover {
+        background-color: #f8f9fa;
+    }
+
+    .sql-terminal-footer {
+        background-color: #e9ecef;
+        padding: 8px 12px;
+        border-top: 1px solid #dee2e6;
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        flex-shrink: 0;
+    }
+
+    .sql-error {
+        color: #dc3545;
+        background-color: #f8d7da;
+        border: 1px solid #f5c6cb;
+        padding: 12px;
+        border-radius: 4px;
+        margin-bottom: 16px;
+    }
+
+    .sql-success {
+        color: #198754;
+        background-color: #d1e7dd;
+        border: 1px solid #badbcc;
+        padding: 12px;
+        border-radius: 4px;
+        margin-bottom: 16px;
+    }
+
+    .btn-sql {
+        display: flex;
+        align-items: center;
+        gap: 3px;
+        font-size: 12px;
+        padding: 4px 8px;
+    }
+
+    .spinner {
+        width: 16px;
+        height: 16px;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        border-top-color: white;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+    }
+
+    @@keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+</style>
+
+<!-- 背景遮罩 -->
+<div id="sqlTerminalBackdrop" class="sql-terminal-backdrop"></div>
+
+<!-- SQL终端主容器 -->
+<div id="sqlTerminal" class="sql-terminal">
+    <div class="sql-terminal-header">
+        <h5 class="mb-0">SQL 终端</h5>
+        <div class="d-flex align-items-center">
+            <div id="sqlTerminalConnectionInfo" class="sql-terminal-connection-info">
+                <!-- 连接信息将通过JavaScript动态设置 -->
+            </div>
+            <button id="closeSqlTerminal" class="btn btn-sm btn-danger ms-3">
+                <i class="bi bi-x"></i>
+            </button>
+        </div>
+    </div>
+
+    <div class="sql-terminal-body">
+        <!-- 左侧保存的查询面板 -->
+        <div class="saved-queries-panel">
+            <div class="saved-queries-title">已保存的查询</div>
+            <div id="savedQueriesList" class="saved-queries-list">
+                <!-- 保存的查询将通过JavaScript动态加载 -->
+                <div style="color: #6c757d; font-size: 12px; text-align: center; margin-top: 20px;">
+                    暂无保存的查询
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧查询操作容器 -->
+        <div class="query-actions-container">
+            <div class="sql-query-section">
+                <textarea id="sqlQuery" class="sql-editor" placeholder="在此输入 SQL 查询语句...
+例如: SELECT * FROM users;">
+</textarea>
+            </div>
+
+            <div class="sql-results-section">
+                <div id="sqlResultsHeader" class="sql-results-header" style="display: none;">
+                    <h6 class="mb-0">查询结果</h6>
+                    <div class="sql-results-info">
+                        <span id="resultsCount">0</span> 行, 
+                        <span id="executionTime">0</span> ms
+                    </div>
+                </div>
+
+                <div id="sqlError" class="sql-error" style="display: none;"></div>
+                <div id="sqlSuccess" class="sql-success" style="display: none;"></div>
+                <div id="sqlResults" class="sql-results"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="sql-terminal-footer">
+        <button id="executeSqlBtn" class="btn btn-primary btn-sql">
+            <i class="bi bi-play"></i> 执行查询
+        </button>
+        <button id="clearSqlBtn" class="btn btn-secondary btn-sql">
+            <i class="bi bi-trash"></i> 清空
+        </button>
+        <button id="formatSqlBtn" class="btn btn-info btn-sql">
+            <i class="bi bi-text-paragraph"></i> 格式化
+        </button>
+        <button id="saveQueryBtn" class="btn btn-success btn-sql">
+            <i class="bi bi-save"></i> 保存查询
+        </button>
+        <button id="loadQueryBtn" class="btn btn-warning btn-sql">
+            <i class="bi bi-folder-open"></i> 加载查询
+        </button>
+        <button id="exportResultsBtn" class="btn btn-danger btn-sql">
+            <i class="bi bi-download"></i> 导出结果
+        </button>
+    </div>
+</div>
+
+<script>
+    // SQL终端全局变量
+    let currentDatabaseId = null;
+    let isSqlTerminalInitialized = false;
+    
+    // 元素引用
+    let sqlQuery, executeSqlBtn, clearSqlBtn, formatSqlBtn;
+    let saveQueryBtn, loadQueryBtn, exportResultsBtn;
+    let sqlError, sqlSuccess, sqlResults, sqlResultsHeader;
+    let resultsCount, executionTime, sqlTerminal, sqlTerminalBackdrop;
+    let sqlTerminalConnectionInfo, closeSqlTerminal, savedQueriesList;
+
+    // 初始化SQL终端组件
+    function initSqlTerminal() {
+        console.log('开始初始化SQL终端组件');
+        
+        // 获取DOM元素
+        sqlQuery = document.getElementById('sqlQuery');
+        executeSqlBtn = document.getElementById('executeSqlBtn');
+        clearSqlBtn = document.getElementById('clearSqlBtn');
+        formatSqlBtn = document.getElementById('formatSqlBtn');
+        saveQueryBtn = document.getElementById('saveQueryBtn');
+        loadQueryBtn = document.getElementById('loadQueryBtn');
+        exportResultsBtn = document.getElementById('exportResultsBtn');
+        sqlError = document.getElementById('sqlError');
+        sqlSuccess = document.getElementById('sqlSuccess');
+        sqlResults = document.getElementById('sqlResults');
+        sqlResultsHeader = document.getElementById('sqlResultsHeader');
+        resultsCount = document.getElementById('resultsCount');
+        executionTime = document.getElementById('executionTime');
+        sqlTerminal = document.getElementById('sqlTerminal');
+        sqlTerminalBackdrop = document.getElementById('sqlTerminalBackdrop');
+        sqlTerminalConnectionInfo = document.getElementById('sqlTerminalConnectionInfo');
+        closeSqlTerminal = document.getElementById('closeSqlTerminal');
+        savedQueriesList = document.getElementById('savedQueriesList');
+        
+        console.log('获取到的元素:');
+        console.log('sqlQuery:', sqlQuery);
+        console.log('executeSqlBtn:', executeSqlBtn);
+        console.log('clearSqlBtn:', clearSqlBtn);
+        console.log('formatSqlBtn:', formatSqlBtn);
+        
+        // 注册事件监听器
+        registerEventListeners();
+        
+        // 标记为已初始化
+        isSqlTerminalInitialized = true;
+        console.log('SQL终端组件初始化完成');
+    }
+
+    // 注册事件监听器
+    function registerEventListeners() {
+        try {
+            // 执行SQL查询按钮点击事件
+            executeSqlBtn.addEventListener('click', handleExecuteSql);
+            
+            // 清空SQL编辑器按钮点击事件
+            clearSqlBtn.addEventListener('click', function() {
+                sqlQuery.value = '';
+                sqlQuery.focus();
+                hideMessages();
+                hideResults();
+            });
+
+            // 格式化SQL按钮点击事件
+            formatSqlBtn.addEventListener('click', function() {
+                let sql = sqlQuery.value.trim();
+                if (!sql) return;
+
+                // 简单的SQL格式化
+                sql = sql.replace(/SELECT/g, '\nSELECT');
+                sql = sql.replace(/FROM/g, '\nFROM');
+                sql = sql.replace(/WHERE/g, '\nWHERE');
+                sql = sql.replace(/JOIN/g, '\nJOIN');
+                sql = sql.replace(/LEFT/g, '\nLEFT');
+                sql = sql.replace(/RIGHT/g, '\nRIGHT');
+                sql = sql.replace(/INNER/g, '\nINNER');
+                sql = sql.replace(/GROUP BY/g, '\nGROUP BY');
+                sql = sql.replace(/ORDER BY/g, '\nORDER BY');
+                sql = sql.replace(/INSERT INTO/g, '\nINSERT INTO');
+                sql = sql.replace(/VALUES/g, '\nVALUES');
+                sql = sql.replace(/UPDATE/g, '\nUPDATE');
+                sql = sql.replace(/SET/g, '\nSET');
+                sql = sql.replace(/DELETE FROM/g, '\nDELETE FROM');
+                sql = sql.replace(/,/g, ',\n    ');
+
+                sqlQuery.value = sql.trim();
+            });
+
+            // 保存查询按钮点击事件
+            saveQueryBtn.addEventListener('click', async function() {
+                const sql = sqlQuery.value.trim();
+                if (!sql) {
+                    showError('没有可保存的查询');
+                    return;
+                }
+
+                const queryName = prompt('请输入查询名称:');
+                if (queryName) {
+                    // 保存查询到数据库
+                    const success = await saveQueryToDatabase(queryName, sql);
+                    if (success) {
+                        showSuccess('查询已保存');
+                        loadSavedQueries();
+                    }
+                }
+            });
+
+            // 加载查询按钮点击事件
+            loadQueryBtn.addEventListener('click', function() {
+                loadSavedQueries();
+            });
+
+            // 导出结果按钮点击事件
+            exportResultsBtn.addEventListener('click', function() {
+                const resultsElement = document.querySelector('.sql-results-table');
+                if (!resultsElement) {
+                    showError('没有可导出的结果');
+                    return;
+                }
+
+                // 简单的CSV导出实现
+                const csv = convertTableToCsv(resultsElement);
+                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a');
+                const url = URL.createObjectURL(blob);
+                link.setAttribute('href', url);
+                link.setAttribute('download', `sql_results_${new Date().toISOString().slice(0, 10)}.csv`);
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+
+                showSuccess('结果已导出为CSV文件');
+            });
+
+            // 关闭SQL终端按钮点击事件
+            closeSqlTerminal.addEventListener('click', closeSqlTerminalWindow);
+            
+            // 点击背景遮罩关闭终端
+            sqlTerminalBackdrop.addEventListener('click', closeSqlTerminalWindow);
+
+            // 快捷键支持
+            sqlQuery.addEventListener('keydown', function(e) {
+                // Ctrl+Enter 执行查询
+                if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                    e.preventDefault();
+                    executeSqlBtn.click();
+                }
+                // Ctrl+Shift+F 格式化
+                if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'F') {
+                    e.preventDefault();
+                    formatSqlBtn.click();
+                }
+            });
+            
+            console.log('事件监听器注册成功');
+        } catch (error) {
+            console.error('注册事件监听器时发生错误:', error);
+            console.error('错误堆栈:', error.stack);
+        }
+    }
+
+    // 执行SQL查询处理函数
+    async function handleExecuteSql() {
+        console.log('执行查询按钮被点击');
+        console.log('当前数据库ID:', currentDatabaseId);
+        console.log('按钮点击事件触发时间:', new Date().toISOString());
+        
+        const sql = sqlQuery.value.trim();
+        if (!sql) {
+            showError('请输入SQL查询语句');
+            return;
+        }
+
+        if (!currentDatabaseId) {
+            showError('未选择数据库，请先打开一个数据库');
+            return;
+        }
+
+        // 显示加载状态
+        executeSqlBtn.disabled = true;
+        executeSqlBtn.innerHTML = '<div class="spinner"></div> 执行中...';
+        hideMessages();
+        hideResults();
+
+        try {
+            const startTime = performance.now();
+            console.log('发送请求到后端:', `/Database/ExecuteSql?id=${currentDatabaseId}`);
+            console.log('请求体:', { Sql: sql });
+            const response = await fetch(`/Database/ExecuteSql?id=${currentDatabaseId}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify({ Sql: sql })
+            });
+            console.log('响应状态:', response.status);
+            console.log('响应状态文本:', response.statusText);
+
+            const endTime = performance.now();
+            const timeTaken = Math.round(endTime - startTime);
+
+            console.log('开始解析响应JSON');
+            const result = await response.json();
+            console.log('解析后的响应:', result);
+
+            if (result.success) {
+                console.log('查询成功，结果类型:', result.result.isQuery ? '查询' : '操作');
+                if (result.result.isQuery) {
+                    // 显示查询结果
+                    console.log('查询结果:', result.result);
+                    displayQueryResults(result.result, timeTaken);
+                } else {
+                    // 显示操作结果
+                    console.log('操作成功，影响行数:', result.result.affectedRows);
+                    showSuccess(`操作成功完成，影响了 ${result.result.affectedRows} 行`);
+                    executionTime.textContent = timeTaken;
+                    sqlResultsHeader.style.display = 'flex';
+                }
+            } else {
+                console.log('查询失败，错误信息:', result.error);
+                showError(result.error || '执行查询失败');
+            }
+        } catch (error) {
+            console.error('执行查询时发生错误:', error);
+            console.error('错误堆栈:', error.stack);
+            showError('执行查询时发生错误: ' + error.message);
+        } finally {
+            // 恢复按钮状态
+            console.log('恢复按钮状态');
+            executeSqlBtn.disabled = false;
+            executeSqlBtn.innerHTML = '<i class="bi bi-play"></i> 执行查询';
+        }
+    }
+
+    // 打开SQL终端窗口
+    async function openSqlTerminal(databaseId) {
+        console.log('打开SQL终端，数据库ID:', databaseId);
+        
+        // 如果组件未初始化，先初始化
+        if (!isSqlTerminalInitialized) {
+            initSqlTerminal();
+        }
+        
+        // 设置当前数据库ID
+        currentDatabaseId = databaseId;
+ 
+        
+        try {
+            // 获取数据库信息
+            const response = await fetch(`/Database/GetDatabaseInfo?id=${databaseId}`);
+            if (response.ok) {
+                const database = await response.json();
+                console.log('获取到的数据库信息:', database);
+                // 更新连接信息
+                sqlTerminalConnectionInfo.innerHTML = `${database.type} - ${database.name} (${database.host}:${database.port})`;
+            } else {
+                console.error('获取数据库信息失败:', response.status);
+                sqlTerminalConnectionInfo.innerHTML = `数据库ID: ${databaseId}`;
+            }
+        } catch (error) {
+            console.error('获取数据库信息时发生错误:', error);
+            sqlTerminalConnectionInfo.innerHTML = `数据库ID: ${databaseId}`;
+        }
+        
+        // 显示终端
+        sqlTerminalBackdrop.style.display = 'block';
+        sqlTerminal.style.display = 'flex';
+        
+        // 清空之前的查询和结果
+        sqlQuery.value = '';
+        hideMessages();
+        hideResults();
+        
+        // 加载已保存的查询
+        loadSavedQueries();
+        
+        // 聚焦到查询输入框
+        sqlQuery.focus();
+        
+        console.log('SQL终端已打开');
+    }
+
+    // 关闭SQL终端窗口
+    function closeSqlTerminalWindow() {
+        console.log('关闭SQL终端');
+        
+        // 隐藏终端和背景遮罩
+        sqlTerminalBackdrop.style.display = 'none';
+        sqlTerminal.style.display = 'none';
+        
+        // 清空当前数据库ID
+        // currentDatabaseId = null;
+        
+        console.log('SQL终端已关闭');
+    }
+
+    // 辅助函数
+    function hideMessages() {
+        sqlError.style.display = 'none';
+        sqlSuccess.style.display = 'none';
+    }
+
+    function hideResults() {
+        sqlResultsHeader.style.display = 'none';
+        sqlResults.innerHTML = '';
+    }
+
+    function showError(message) {
+        sqlError.textContent = message;
+        sqlError.style.display = 'block';
+        sqlError.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function showSuccess(message) {
+        sqlSuccess.textContent = message;
+        sqlSuccess.style.display = 'block';
+        sqlSuccess.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function displayQueryResults(result, timeTaken) {
+        const columns = result.columns;
+        const rows = result.rows;
+
+        if (rows.length === 0) {
+            showSuccess('查询返回 0 行结果');
+            return;
+        }
+
+        // 创建结果表格
+        const table = document.createElement('table');
+        table.className = 'sql-results-table';
+
+        // 创建表头
+        const thead = document.createElement('thead');
+        const headerRow = document.createElement('tr');
+        columns.forEach(column => {
+            const th = document.createElement('th');
+            th.textContent = column;
+            headerRow.appendChild(th);
+        });
+        thead.appendChild(headerRow);
+        table.appendChild(thead);
+
+        // 创建表体
+        const tbody = document.createElement('tbody');
+        rows.forEach(row => {
+            const tr = document.createElement('tr');
+            row.forEach(cell => {
+                const td = document.createElement('td');
+                td.textContent = cell !== null ? cell.toString() : 'NULL';
+                tr.appendChild(td);
+            });
+            tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+
+        // 更新结果信息
+        resultsCount.textContent = rows.length;
+        executionTime.textContent = timeTaken;
+
+        // 显示结果
+        sqlResults.innerHTML = '';
+        sqlResults.appendChild(table);
+        sqlResultsHeader.style.display = 'flex';
+        sqlResultsHeader.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function convertTableToCsv(table) {
+        const headers = [];
+        const rows = [];
+
+        // 获取表头
+        const headerCells = table.querySelectorAll('thead th');
+        headerCells.forEach(cell => {
+            headers.push('"' + cell.textContent.replace(/"/g, '""') + '"');
+        });
+
+        // 获取行数据
+        const dataRows = table.querySelectorAll('tbody tr');
+        dataRows.forEach(row => {
+            const rowData = [];
+            const cells = row.querySelectorAll('td');
+            cells.forEach(cell => {
+                rowData.push('"' + cell.textContent.replace(/"/g, '""') + '"');
+            });
+            rows.push(rowData.join(','));
+        });
+
+        // 组合成CSV
+        return [headers.join(','), ...rows].join('\n');
+    }
+    
+    // 保存查询到数据库
+    async function saveQueryToDatabase(queryName, sql) {
+        try {
+            console.log('保存查询到数据库:', queryName);
+            
+            const response = await fetch('/Database/SaveQuery', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify({
+                    name: queryName,
+                    sql: sql
+                })
+            });
+            
+            const result = await response.json();
+            if (result.success) {
+                console.log('查询保存成功');
+                return true;
+            } else {
+                console.error('查询保存失败:', result.error);
+                showError('查询保存失败: ' + result.error);
+                return false;
+            }
+        } catch (error) {
+            console.error('保存查询时发生错误:', error);
+            showError('查询保存失败: ' + error.message);
+            return false;
+        }
+    }
+    
+    // 从数据库加载查询
+    async function loadQueriesFromDatabase() {
+        try {
+            console.log('从数据库加载查询');
+            
+            const response = await fetch('/Database/GetSavedQueries', {
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            });
+            
+            const result = await response.json();
+            if (result.success) {
+                console.log('查询加载成功，共', result.queries.length, '个查询');
+                return result.queries;
+            } else {
+                console.error('查询加载失败:', result.error);
+                showError('查询加载失败: ' + result.error);
+                return [];
+            }
+        } catch (error) {
+            console.error('加载查询时发生错误:', error);
+            showError('查询加载失败: ' + error.message);
+            return [];
+        }
+    }
+    
+    // 从数据库删除查询
+    async function deleteQueryFromDatabase(queryId) {
+        try {
+            console.log('从数据库删除查询，ID:', queryId);
+            
+            const response = await fetch(`/Database/DeleteQuery?id=${queryId}`, {
+                method: 'DELETE',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            });
+            
+            const result = await response.json();
+            if (result.success) {
+                console.log('查询删除成功');
+                return true;
+            } else {
+                console.error('查询删除失败:', result.error);
+                showError('查询删除失败: ' + result.error);
+                return false;
+            }
+        } catch (error) {
+            console.error('删除查询时发生错误:', error);
+            showError('查询删除失败: ' + error.message);
+            return false;
+        }
+    }
+    
+    // 渲染已保存的查询列表
+    async function loadSavedQueries() {
+        try {
+            const savedQueries = await loadQueriesFromDatabase();
+            
+            // 清空列表
+            savedQueriesList.innerHTML = '';
+            
+            if (savedQueries.length === 0) {
+                savedQueriesList.innerHTML = '<div style="color: #6c757d; font-size: 12px; text-align: center; margin-top: 20px;">暂无保存的查询</div>';
+                return;
+            }
+            
+            // 渲染每个查询项
+            savedQueries.forEach(query => {
+                const queryItem = document.createElement('div');
+                queryItem.className = 'saved-query-item';
+                queryItem.setAttribute('data-query-id', query.id);
+                queryItem.setAttribute('data-query-sql', query.sql);
+                
+                // 只显示查询名称和删除按钮
+                queryItem.innerHTML = `
+                    <div class="saved-query-name">${escapeHtml(query.name)}</div>
+                    <div class="saved-query-actions">
+                        <button class="btn-delete-query" data-query-id="${query.id}">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
+                `;
+                
+                // 添加点击事件 - 加载查询
+                queryItem.addEventListener('click', function(e) {
+                    // 如果点击的是删除按钮，不加载查询
+                    if (e.target.closest('.btn-delete-query')) {
+                        return;
+                    }
+                    
+                    const sql = this.getAttribute('data-query-sql');
+                    sqlQuery.value = sql;
+                    hideMessages();
+                    hideResults();
+                    sqlQuery.focus();
+                });
+                
+                // 添加删除按钮点击事件
+                const deleteBtn = queryItem.querySelector('.btn-delete-query');
+                deleteBtn.addEventListener('click', async function(e) {
+                    e.stopPropagation(); // 阻止冒泡，避免触发加载查询的事件
+                    
+                    const queryId = this.getAttribute('data-query-id');
+                    if (confirm('确定要删除这个查询吗？')) {
+                        const success = await deleteQueryFromDatabase(queryId);
+                        if (success) {
+                            // 重新加载查询列表
+                            loadSavedQueries();
+                            showSuccess('查询已删除');
+                        }
+                    }
+                });
+                
+                savedQueriesList.appendChild(queryItem);
+            });
+        } catch (error) {
+            console.error('加载已保存的查询失败:', error);
+            showError('加载已保存的查询失败: ' + error.message);
+        }
+    }
+    
+    // HTML转义函数
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    
+    // 确保DOM加载完成后执行初始化
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log('DOM内容加载完成，SQL终端组件已就绪');
+    });
+</script>

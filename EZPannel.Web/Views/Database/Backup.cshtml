@@ -1,0 +1,333 @@
+@using System
+@{    
+    ViewData["Title"] = "数据库备份";
+    var backupLogs = ViewBag.BackupLogs as List<EZPannel.Api.Models.BackupLog>;
+}
+
+<div class="container-fluid">
+    <!-- 备份配置模块 -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">备份配置</h5>
+                    <button class="btn btn-primary btn-sm" onclick="editBackupConfig()">
+                        <i class="bi bi-plus-circle me-1"></i> 添加配置
+                    </button>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>配置名称</th>
+                                    <th>数据库名</th>
+                                    <th>备份时间表</th>
+                                    <th>状态</th>
+                                    <th>最后备份时间</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var config in Model)
+                                {
+                                    <tr>
+                                        <td>@config.Name</td>
+                                        <td>@config.DatabaseNames</td>
+                                        <td>@config.CronExpression</td>
+                                        <td>
+                                            @if (config.IsEnabled)
+                                            {
+                                                <span class="badge bg-success">启用</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-secondary">禁用</span>
+                                            }
+                                        </td>
+                                        <td>
+                                            @if (config.LastBackupTime != null)
+                                            {
+                                                @config.LastBackupTime.ToString("yyyy-MM-dd HH:mm:ss")
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted">从未</span>
+                                            }
+                                        </td>
+                                        <td>
+                                            <div class="btn-group" role="group">
+                                                <button class="btn btn-sm btn-success" onclick="executeBackup(@config.Id)" title="立即备份">
+                                                    <i class="bi bi-play-fill"></i>
+                                                </button>
+                                                <button class="btn btn-sm btn-warning" onclick="editBackupConfig(@config.Id)" title="编辑">
+                                                    <i class="bi bi-pencil-fill"></i>
+                                                </button>
+                                                <button class="btn btn-sm btn-danger" onclick="deleteBackupConfig(@config.Id)" title="删除">
+                                                    <i class="bi bi-trash-fill"></i>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+<!-- 备份配置模态框 -->
+<div class="modal fade" id="addBackupConfigModal" tabindex="-1" aria-labelledby="addBackupConfigModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addBackupConfigModalLabel">添加备份配置</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="backupConfigForm">
+                    <input type="hidden" name="Id" value="0">
+                    <div class="mb-3">
+                        <label for="databaseSelect" class="form-label">选择数据库</label>
+                        <select class="form-select" id="databaseSelect" name="DatabaseId" required>
+                            <option value="">请选择数据库</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="backupConfigName" class="form-label">配置名称</label>
+                        <input type="text" class="form-control" id="backupConfigName" name="Name" required />
+                    </div>
+                    <div class="mb-3">
+                        <label for="databaseNames" class="form-label">数据库名(逗号分隔)</label>
+                        <input type="text" class="form-control" id="databaseNames" name="DatabaseNames" value="" required />
+                    </div>
+                    <div class="mb-3">
+                        <label for="cronExpression" class="form-label">备份时间表(Cron表达式)</label>
+                        <input type="text" class="form-control" id="cronExpression" name="CronExpression" value="0 0 2 * * ?" required />
+                        <div class="form-text">默认: 每天凌晨2点</div>
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="isEnabled" name="IsEnabled" value="true" checked />
+                        <label class="form-check-label" for="isEnabled">启用自动备份</label>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="saveBackupConfig(parseInt($('#backupConfigForm input[name=\'Id\']').val()))">保存</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+
+    
+    // 页面加载完成后绑定模态框事件
+    $(document).ready(function() {
+    });
+
+    // 加载数据库列表
+    function loadDatabases(callback) {
+        $.ajax({
+            url: '@Url.Action("GetAllDatabases")',
+            type: 'GET',
+            success: function(response) {
+                if (response.success && response.databases) {
+                    var select = $('#databaseSelect');
+                    select.empty();
+                    select.append('<option value="">请选择数据库</option>');
+                    
+                    $.each(response.databases, function(index, db) {
+                        select.append('<option value="' + db.id + '">' + db.name + ' (' + db.host + ':' + db.port + ')</option>');
+                    });
+                    
+                    // 如果提供了回调函数，则调用它
+                    if (typeof callback === 'function') {
+                        callback();
+                    }
+                }
+            },
+            error: function() {
+                toastr.error('加载数据库列表失败');
+            }
+        });
+    }
+
+    // 立即执行备份
+    function executeBackup(configId) {
+        if (confirm('确定要立即执行备份吗？')) {
+            $.ajax({
+                url: '@Url.Action("ExecuteBackup")',
+                type: 'POST',
+                data: { configId: configId },
+                success: function(response) {
+                    if (response.success) {
+                        toastr.success('备份任务已启动');
+                        setTimeout(function() {
+                            location.reload();
+                        }, 1000);
+                    } else {
+                        var errorMsg = response.message || '备份任务启动失败';
+                        toastr.error('备份任务启动失败: ' + errorMsg);
+                    }
+                },
+                error: function(xhr) {
+                    var errorMsg = xhr.responseJSON?.message || '备份任务启动失败';
+                    toastr.error('备份任务启动失败: ' + errorMsg);
+                }
+            });
+        }
+    }
+
+    // 检查配置名称是否已存在
+    function checkConfigNameExists(name, excludeId) {
+        return new Promise((resolve, reject) => {
+            $.ajax({
+                url: '@Url.Action("CheckConfigNameExists")',
+                type: 'GET',
+                data: { name: name, excludeId: excludeId || 0 },
+                success: function(response) {
+                    resolve(response.exists);
+                },
+                error: function() {
+                    reject(false);
+                }
+            });
+        });
+    }
+    
+    // 保存备份配置
+    async function saveBackupConfig(configId) {
+        // 表单验证
+        if (!$('#backupConfigForm')[0].checkValidity()) {
+            $('#backupConfigForm')[0].reportValidity();
+            return;
+        }
+        var configName = $('#backupConfigName').val().trim();
+        // 检查配置名称是否已存在（仅在创建或修改名称时检查）
+        if (configName) {
+            try {
+                var exists = await checkConfigNameExists(configName, configId);
+                if (exists) {
+                    toastr.error('配置名称已存在，请使用其他名称');
+                    return;
+                }
+            } catch (error) {
+                toastr.error('检查配置名称失败');
+                return;
+            }
+        }
+        
+        var formData = $('#backupConfigForm').serialize();
+        var actionUrl;
+        
+        // 根据是否传入configId参数决定是创建还是更新操作
+        if (configId && configId > 0) {
+            // 更新现有配置
+            actionUrl = '@Url.Action("UpdateBackupConfig")';
+            // 确保表单中的Id字段与传入的configId一致
+            $('#backupConfigForm input[name="Id"]').val(configId);
+        } else {
+            // 创建新配置
+            actionUrl = '@Url.Action("CreateBackupConfig")';
+            $('#backupConfigForm input[name="Id"]').val('0');
+        }
+        
+        $.ajax({
+            url: actionUrl,
+            type: 'POST',
+            data: formData,
+            success: function(response) {
+                if (response.success) {
+                    toastr.success('备份配置已保存');
+                    $('#addBackupConfigModal').modal('hide');
+                    setTimeout(function() {
+                        location.reload();
+                    }, 1000);
+                } else {
+                    toastr.error('备份配置保存失败：' + (response.message || ''));
+                }
+            },
+            error: function(xhr) {
+                var errorMsg = xhr.responseJSON?.message || '备份配置保存失败';
+                toastr.error(errorMsg);
+            }
+        });
+    }
+    
+
+    // 编辑/添加备份配置
+    function editBackupConfig(configId) {
+        var modal = $('#addBackupConfigModal');
+        if (configId && configId > 0) {
+            // 加载现有配置
+            $.ajax({
+                url: '@Url.Action("GetBackupConfig", new { id = 0 })'.replace('0', configId),
+                type: 'GET',
+                success: function(response) {
+                    if (response.success) {
+                        var config = response.config;
+                        modal.find('.modal-title').text('编辑备份配置');
+                        modal.find('input[name="Id"]').val(config.id);
+                        modal.find('input[name="Name"]').val(config.name);
+                        modal.find('input[name="DatabaseNames"]').val(config.databaseNames);
+                        modal.find('input[name="CronExpression"]').val(config.cronExpression);
+                        modal.find('input[name="IsEnabled"]').prop('checked', config.isEnabled);
+                        
+                        // 加载数据库列表并选择当前数据库
+                        loadDatabases(function() {
+                            $('#databaseSelect').val(config.databaseId);
+                        });
+                        modal.modal('show');
+                    } else {
+                        toastr.error('获取备份配置失败');
+                    }
+                },
+                error: function() {
+                    toastr.error('获取备份配置失败');
+                }
+            });
+        } else {
+            
+            // 直接打开模态框
+            modal.find('.modal-title').text('添加备份配置');
+            
+            // 重置表单元素
+            modal.find('input[name="Id"]').val('0');
+            modal.find('input[name="Name"]').val('');
+            modal.find('input[name="DatabaseNames"]').val('');
+            modal.find('input[name="CronExpression"]').val('0 0 2 * * ?');
+            modal.find('input[name="IsEnabled"]').prop('checked', true);
+            // 加载数据库列表
+            loadDatabases();
+            modal.modal('show');
+        }
+        bindSaveButtonEvent(configId);
+    }
+
+    // 删除备份配置
+    function deleteBackupConfig(configId) {
+        if (confirm('确定要删除这个备份配置吗？')) {
+            $.ajax({
+                url: '@Url.Action("DeleteBackupConfig")',
+                type: 'POST',
+                data: { id: configId },
+                success: function(response) {
+                    if (response.success) {
+                        toastr.success('备份配置已删除');
+                        setTimeout(function() {
+                            location.reload();
+                        }, 1000);
+                    } else {
+                        toastr.error('备份配置删除失败');
+                    }
+                },
+                error: function() {
+                    toastr.error('备份配置删除失败');
+                }
+            });
+        }
+    }
+</script>

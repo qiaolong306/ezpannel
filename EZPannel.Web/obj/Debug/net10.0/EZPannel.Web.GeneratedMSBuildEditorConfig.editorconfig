@@ -1,0 +1,111 @@
+is_global = true
+build_property.TargetFramework = net10.0
+build_property.TargetFramework = net10.0
+build_property.TargetPlatformMinVersion = 
+build_property.TargetPlatformMinVersion = 
+build_property.UsingMicrosoftNETSdkWeb = true
+build_property.UsingMicrosoftNETSdkWeb = true
+build_property.ProjectTypeGuids = 
+build_property.ProjectTypeGuids = 
+build_property.InvariantGlobalization = 
+build_property.InvariantGlobalization = 
+build_property.PlatformNeutralAssembly = 
+build_property.PlatformNeutralAssembly = 
+build_property.EnforceExtendedAnalyzerRules = 
+build_property.EnforceExtendedAnalyzerRules = 
+build_property._SupportedPlatformList = Linux,macOS,Windows
+build_property._SupportedPlatformList = Linux,macOS,Windows
+build_property.TargetFrameworkIdentifier = .NETCoreApp
+build_property.TargetFrameworkVersion = v10.0
+build_property.RootNamespace = EZPannel.Web
+build_property.RootNamespace = EZPannel.Web
+build_property.ProjectDir = D:\works\game-jhyy\trunk\program\server-2.0\Tools\EZPannel\EZPannel.Web\
+build_property.EnableComHosting = 
+build_property.EnableGeneratedComInterfaceComImportInterop = 
+build_property.RazorLangVersion = 10.0
+build_property.SupportLocalizedComponentNames = 
+build_property.GenerateRazorMetadataSourceChecksumAttributes = 
+build_property.MSBuildProjectDirectory = D:\works\game-jhyy\trunk\program\server-2.0\Tools\EZPannel\EZPannel.Web
+build_property._RazorSourceGeneratorDebug = 
+build_property.EffectiveAnalysisLevelStyle = 10.0
+build_property.EnableCodeStyleSeverity = 
+
+[D:/works/game-jhyy/trunk/program/server-2.0/Tools/EZPannel/EZPannel.Web/Views/Auth/Login.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcQXV0aFxMb2dpbi5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/works/game-jhyy/trunk/program/server-2.0/Tools/EZPannel/EZPannel.Web/Views/Database/Backup.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcRGF0YWJhc2VcQmFja3VwLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/works/game-jhyy/trunk/program/server-2.0/Tools/EZPannel/EZPannel.Web/Views/Database/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcRGF0YWJhc2VcSW5kZXguY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/works/game-jhyy/trunk/program/server-2.0/Tools/EZPannel/EZPannel.Web/Views/Database/Restore.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcRGF0YWJhc2VcUmVzdG9yZS5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/works/game-jhyy/trunk/program/server-2.0/Tools/EZPannel/EZPannel.Web/Views/Home/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcSG9tZVxJbmRleC5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/works/game-jhyy/trunk/program/server-2.0/Tools/EZPannel/EZPannel.Web/Views/Proxy/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcUHJveHlcSW5kZXguY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/works/game-jhyy/trunk/program/server-2.0/Tools/EZPannel/EZPannel.Web/Views/Scripts/AutoRun.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcU2NyaXB0c1xBdXRvUnVuLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/works/game-jhyy/trunk/program/server-2.0/Tools/EZPannel/EZPannel.Web/Views/Scripts/History.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcU2NyaXB0c1xIaXN0b3J5LmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/works/game-jhyy/trunk/program/server-2.0/Tools/EZPannel/EZPannel.Web/Views/Scripts/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcU2NyaXB0c1xJbmRleC5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/works/game-jhyy/trunk/program/server-2.0/Tools/EZPannel/EZPannel.Web/Views/Server/FileManager.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcU2VydmVyXEZpbGVNYW5hZ2VyLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/works/game-jhyy/trunk/program/server-2.0/Tools/EZPannel/EZPannel.Web/Views/Server/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcU2VydmVyXEluZGV4LmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/works/game-jhyy/trunk/program/server-2.0/Tools/EZPannel/EZPannel.Web/Views/Server/Scripts.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcU2VydmVyXFNjcmlwdHMuY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/works/game-jhyy/trunk/program/server-2.0/Tools/EZPannel/EZPannel.Web/Views/Shared/_FloatingTerminal.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcU2hhcmVkXF9GbG9hdGluZ1Rlcm1pbmFsLmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/works/game-jhyy/trunk/program/server-2.0/Tools/EZPannel/EZPannel.Web/Views/Shared/_Layout.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcU2hhcmVkXF9MYXlvdXQuY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/works/game-jhyy/trunk/program/server-2.0/Tools/EZPannel/EZPannel.Web/Views/Shared/_ServerLayout.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcU2hhcmVkXF9TZXJ2ZXJMYXlvdXQuY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/works/game-jhyy/trunk/program/server-2.0/Tools/EZPannel/EZPannel.Web/Views/Shared/_SqlTerminal.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcU2hhcmVkXF9TcWxUZXJtaW5hbC5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/works/game-jhyy/trunk/program/server-2.0/Tools/EZPannel/EZPannel.Web/Views/System/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcU3lzdGVtXEluZGV4LmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/works/game-jhyy/trunk/program/server-2.0/Tools/EZPannel/EZPannel.Web/Views/Users/Index.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcVXNlcnNcSW5kZXguY3NodG1s
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/works/game-jhyy/trunk/program/server-2.0/Tools/EZPannel/EZPannel.Web/Views/Users/Profile.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcVXNlcnNcUHJvZmlsZS5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/works/game-jhyy/trunk/program/server-2.0/Tools/EZPannel/EZPannel.Web/Views/_ViewStart.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcX1ZpZXdTdGFydC5jc2h0bWw=
+build_metadata.AdditionalFiles.CssScope = 

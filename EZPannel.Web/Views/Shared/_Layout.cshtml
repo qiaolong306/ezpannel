@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EZPannel - @ViewData["Title"]</title>
+    <!-- Element Plus CSS (for icons and components if needed, though we use Bootstrap for layout) -->
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet">
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
+    <style>
+        :root { --sidebar-bg: #304156; --header-height: 60px; --primary-color: #409eff; }
+        body { margin: 0; background-color: #f0f2f5; font-family: "Helvetica Neue",Helvetica,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","微软雅黑",Arial,sans-serif; -webkit-font-smoothing: antialiased; }
+        .layout-container { display: flex; height: 100vh; overflow: hidden; }
+        .sidebar { width: 220px; background-color: var(--sidebar-bg); color: #bfcbd9; display: flex; flex-direction: column; z-index: 100; box-shadow: 2px 0 6px rgba(0,21,41,.35); transition: width 0.3s; }
+        .logo-area { height: var(--header-height); line-height: var(--header-height); text-align: center; color: #fff; font-size: 20px; font-weight: bold; background: linear-gradient(135deg, #6a82fb, #fc5c7d); display: flex; align-items: center; justify-content: center; gap: 10px; }
+        .sidebar-menu { flex: 1; padding: 10px 0; overflow-y: auto; }
+        .menu-item { display: flex; align-items: center; padding: 12px 20px; color: #bfcbd9; text-decoration: none; transition: all .3s; font-size: 14px; position: relative; }
+        .menu-item:hover { color: #fff; background-color: #263445; }
+        .menu-item.active { color: #fff; background-color: var(--primary-color) !important; }
+        .menu-item i { margin-right: 12px; font-size: 18px; width: 20px; text-align: center; }
+        
+        .sub-menu { background-color: #1f2d3d; display: none; padding: 5px 0; }
+        .sub-menu.show { display: block; }
+        .sub-menu .menu-item { padding-left: 52px; font-size: 13px; }
+        .menu-item .arrow { margin-left: auto; transition: transform 0.3s; font-size: 12px; }
+        .menu-item.open .arrow { transform: rotate(90deg); }
+        
+        .main-wrapper { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+        .main-header { height: var(--header-height); background: #fff; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; box-shadow: 0 1px 4px rgba(0,21,41,.08); z-index: 90; }
+        .breadcrumb-area { color: #606266; font-size: 14px; }
+        .header-right { display: flex; align-items: center; gap: 15px; }
+        .user-info { display: flex; align-items: center; gap: 8px; cursor: pointer; color: #606266; font-size: 14px; }
+        .user-avatar { width: 32px; height: 32px; border-radius: 50%; }
+        
+        .main-content { flex: 1; overflow-y: auto; padding: 20px; }
+        .card { border: none; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,21,41,.08); margin-bottom: 20px; transition: 0.3s; }
+        .card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .card-header { background: #fff; border-bottom: 1px solid #f0f2f5; font-weight: bold; padding: 15px 20px; border-radius: 8px 8px 0 0; }
+        .btn-primary { background-color: var(--primary-color); border-color: var(--primary-color); }
+        .btn-primary:hover { background-color: #66b1ff; border-color: #66b1ff; }
+        
+        /* Table Styles */
+        .table thead th { background-color: #fafafa; color: #909399; font-weight: 500; font-size: 13px; border-bottom: 1px solid #ebeef5; padding: 12px 15px; }
+        .table tbody td { padding: 12px 15px; color: #606266; font-size: 14px; vertical-align: middle; border-bottom: 1px solid #ebeef5; }
+        .table-hover tbody tr:hover { background-color: #f5f7fa !important; }
+
+        /* Progress Bar */
+        .progress { background-color: #ebeef5; border-radius: 10px; }
+        .badge { font-weight: normal; padding: 5px 10px; }
+    </style>
+</head>
+<body>
+    <div class="layout-container">
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <div class="logo-area">
+                <i class="bi bi-cpu"></i>
+                <span>EZPannel</span>
+            </div>
+            <div class="sidebar-menu">
+                <a href="/" class="menu-item @(ViewData["ActiveMenu"]?.ToString() == "servers" ? "active" : "")">
+                    <i class="bi bi-display"></i>
+                    <span>服务器列表</span>
+                </a>
+                
+                <div class="menu-group">
+                    <a href="javascript:void(0)" class="menu-item @(ViewData["ActiveMenu"]?.ToString().StartsWith("scripts") == true ? "open" : "")" onclick="toggleSubMenu(this)">
+                        <i class="bi bi-code-square"></i>
+                        <span>自动化管理</span>
+                        <i class="bi bi-chevron-right arrow"></i>
+                    </a>
+                    <div class="sub-menu @(ViewData["ActiveMenu"]?.ToString().StartsWith("scripts") == true ? "show" : "")">
+                    <a href="/Scripts" class="menu-item @(ViewData["ActiveMenu"]?.ToString() == "scripts" ? "active" : "")">
+                        <span>脚本库</span>
+                    </a>
+                        <a href="/Scripts/AutoRun"
+                            class="menu-item @(ViewData["ActiveMenu"]?.ToString() == "scripts_autorun" ? "active" : "")">
+                            <span>自动任务</span>
+                        </a>
+                    <a href="/Scripts/History" class="menu-item @(ViewData["ActiveMenu"]?.ToString() == "scripts_history" ? "active" : "")">
+                        <span>执行历史</span>
+                    </a>
+     
+                </div>
+                </div>
+
+
+                <div class="menu-group">
+                    <a href="javascript:void(0)" class="menu-item @(ViewData["ActiveMenu"]?.ToString().StartsWith("database") == true ? "open" : "")" onclick="toggleSubMenu(this)">
+                        <i class="bi bi-code-square"></i>
+                        <span>数据库管理</span>
+                        <i class="bi bi-chevron-right arrow"></i>
+                    </a>
+                    <div class="sub-menu @(ViewData["ActiveMenu"]?.ToString().StartsWith("database") == true ? "show" : "")">
+                        <a href="/Database/Index" class="menu-item @(ViewData["ActiveMenu"]?.ToString() == "database" ? "active" : "")">
+                            <span>数据库</span>
+                        </a>
+                        <a href="/Database/Backup" class="menu-item @(ViewData["ActiveMenu"]?.ToString() == "database_backup" ? "active" : "")">
+                            <span>数据库备份</span>
+                        </a>
+                        <a href="/Database/Restore" class="menu-item @(ViewData["ActiveMenu"]?.ToString() == "database_restore" ? "active" : "")">
+                            <span>数据库还原</span>
+                        </a>
+                    </div>
+                </div>
+
+                <a href="/Users" class="menu-item @(ViewData["ActiveMenu"]?.ToString() == "users" ? "active" : "")">
+                    <i class="bi bi-people"></i>
+                    <span>用户管理</span>
+                </a>
+                
+                <div class="menu-group">
+                    <a href="javascript:void(0)" class="menu-item @(ViewData["ActiveMenu"]?.ToString().StartsWith("proxy") == true ? "open" : "")" onclick="toggleSubMenu(this)">
+                        <i class="bi bi-ethernet"></i>
+                        <span>内网穿透</span>
+                        <i class="bi bi-chevron-right arrow"></i>
+                    </a>
+                    <div class="sub-menu @(ViewData["ActiveMenu"]?.ToString().StartsWith("proxy") == true ? "show" : "")">
+                        <a href="/Proxy" class="menu-item @(ViewData["ActiveMenu"]?.ToString() == "proxy_users" ? "active" : "")">
+                            <span>代理服务器地址</span>
+                        </a>
+                    </div>
+                </div>
+
+                <a href="/System" class="menu-item @(ViewData["ActiveMenu"]?.ToString() == "settings" ? "active" : "")">
+                    <i class="bi bi-gear"></i>
+                    <span>系统设置</span>
+                </a>
+            </div>
+        </div>
+
+        <!-- Main -->
+        <div class="main-wrapper">
+            <header class="main-header">
+                <div class="breadcrumb-area">
+                    <span>首页</span> / <span id="breadcrumb-current">@ViewData["Title"]</span>
+                </div>
+                <div class="header-right">
+                    <div class="user-info dropdown">
+                        <img src="https://cube.elemecdn.com/0/88/03b0d39583f48206768a7534e55bcpng.png" class="user-avatar" alt="Avatar">
+                        <span class="dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                            Admin
+                        </span>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            <li><a class="dropdown-item" href="/Users/Profile">个人信息</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="/Auth/Logout">退出登录</a></li>
+                        </ul>
+                    </div>
+                </div>
+            </header>
+            <main class="main-content">
+                @RenderBody()
+            </main>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+
+    <script>
+        axios.defaults.baseURL = '/api';
+
+        function toggleSubMenu(el) {
+            el.classList.toggle('open');
+            const sub = el.nextElementSibling;
+            sub.classList.toggle('show');
+        }
+
+        // Helper to get cookie
+        function getCookie(name) {
+            let value = `; ${document.cookie}`;
+            let parts = value.split(`; ${name}=`);
+            if (parts.length === 2) return parts.pop().split(';').shift();
+        }
+
+        // Set token from cookie to localStorage if exists
+        const token = getCookie('access_token');
+        if (token) localStorage.setItem('token', token);
+
+        // Axios Interceptor for JWT
+        axios.interceptors.request.use(config => {
+            const token = localStorage.getItem('token');
+            if (token) {
+                config.headers.Authorization = `Bearer ${token}`;
+            }
+            return config;
+        });
+
+        // Redirect to login on 401
+        axios.interceptors.response.use(
+            response => response,
+            error => {
+                if (error.response && error.response.status === 401) {
+                    window.location.href = '/Auth/Login';
+                }
+                return Promise.reject(error);
+            }
+        );
+    </script>
+    @RenderSection("Scripts", required: false)
+</body>
+</html>

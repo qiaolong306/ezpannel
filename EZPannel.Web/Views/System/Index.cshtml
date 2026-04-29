@@ -1,0 +1,118 @@
+@{
+    ViewData["Title"] = "系统设置";
+    ViewData["ActiveMenu"] = "settings";
+    Dictionary<string,string> configs = Model as Dictionary<string,string>;
+        string SystemName = configs.ContainsKey(ConfigService.key_SystemName) ? configs[ConfigService.key_SystemName] : "EZPannel";
+        string proxyServerUrl = configs.ContainsKey(ConfigService.key_ProxyServerUrl) ? configs[ConfigService.key_ProxyServerUrl] : "http://localhost:8080";
+}
+
+<div class="container-fluid p-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h4 class="fw-bold mb-0">系统设置</h4>
+            <p class="text-muted small mb-0">管理 EZPannel 全局参数与系统配置</p>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-8">
+            <div class="card border-0 shadow-sm rounded-3 mb-4">
+                <div class="card-header border-0 bg-white py-3">
+                    <h6 class="mb-0 fw-bold">常规设置</h6>
+                </div>
+                <div class="card-body">
+                    <form id="configForm">
+                        <div class="mb-3 row">
+                            <label class="col-sm-3 col-form-label text-muted small">系统名称</label>
+                            <div class="col-sm-9">
+                                <input type="text" class="form-control" id="@ConfigService.key_SystemName" name="@ConfigService.key_SystemName" value="@SystemName" placeholder="EZPannel">
+                            </div>
+                        </div>
+                        <div class="mb-3 row">
+                            <label class="col-sm-3 col-form-label text-muted small">代理服务器地址</label>
+                            <div class="col-sm-9">
+                                <input type="url" class="form-control" id="@ConfigService.key_ProxyServerUrl" name="@ConfigService.key_ProxyServerUrl" value="@proxyServerUrl" 
+                                placeholder="http://localhost:8080">
+                            </div>
+                        </div>
+                        <hr class="opacity-10 my-4">
+                        <div class="d-flex justify-content-end">
+                            <button type="button" class="btn btn-primary px-4" onclick="saveConfig()">保存配置</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            @* <div class="card border-0 shadow-sm rounded-3">
+                <div class="card-header border-0 bg-white py-3">
+                    <h6 class="mb-0 fw-bold">系统维护</h6>
+                </div>
+                <div class="card-body">
+                    <div class="d-flex align-items-center justify-content-between mb-4">
+                        <div>
+                            <div class="fw-bold">清理系统日志</div>
+                            <small class="text-muted">释放数据库中过期的执行历史和监控记录</small>
+                        </div>
+                        <button class="btn btn-outline-danger btn-sm px-3">立即清理</button>
+                    </div>
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div>
+                            <div class="fw-bold">数据库备份</div>
+                            <small class="text-muted">立即导出当前系统的数据库备份文件</small>
+                        </div>
+                        <button class="btn btn-outline-primary btn-sm px-3">导出备份</button>
+                    </div>
+                </div>
+            </div> *@
+        </div>
+        
+        <div class="col-md-4">
+            <div class="card border-0 shadow-sm rounded-3 mb-4 bg-primary text-white">
+                <div class="card-body p-4 text-center">
+                    <i class="bi bi-info-circle display-4 mb-3 opacity-50"></i>
+                    <h5 class="fw-bold">系统版本</h5>
+                    <p class="mb-0">v2.0.0 Stable</p>
+                    <small class="opacity-75">Update at 2026-01-27</small>
+                </div>
+            </div>
+            <div class="card border-0 shadow-sm rounded-3">
+                <div class="card-header border-0 bg-white py-3">
+                    <h6 class="mb-0 fw-bold">关于项目</h6>
+                </div>
+                <div class="card-body small">
+                    <p>EZPannel 是一款基于 ASP.NET Core MVC 的轻量级服务器管理面板。</p>
+                    <ul class="list-unstyled mb-0">
+                        <li class="mb-2"><i class="bi bi-check2-circle text-success me-2"></i>支持 Windows/Linux</li>
+                        <li class="mb-2"><i class="bi bi-check2-circle text-success me-2"></i>SSH 终端</li>
+                        <li class="mb-2"><i class="bi bi-check2-circle text-success me-2"></i>SFTP 文件管理</li>
+                        <li class="mb-2"><i class="bi bi-check2-circle text-success me-2"></i>脚本自动化执行</li>
+                        <li class="mb-2"><i class="bi bi-check2-circle text-success me-2"></i>数据库备份/恢复</li>
+                        <li class="mb-2"><i class="bi bi-check2-circle text-success me-2"></i>内网穿透代理</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+    function saveConfig() {
+        var form = document.getElementById("configForm");
+        var formData = new FormData(form);
+        //使用ajax提交表单数据
+        $.ajax({
+            url: "/System/SaveConfig",
+            type: "POST",
+            data: formData,
+            processData: false,
+            contentType: false,
+            success: function (response) {
+                if (response.success) {
+                    alert("配置保存成功");
+                } else {
+                    alert("配置保存失败");
+                }
+            }
+        });
+
+    }
+</script>

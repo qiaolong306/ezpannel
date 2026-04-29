@@ -1,0 +1,251 @@
+@model IEnumerable<EZPannel.Api.Models.ScriptCategory>
+@{    
+    Layout="/Views/Shared/_ServerLayout.cshtml";    
+    ViewData["Title"] = "脚本库";
+    int serverId = ViewData["ServerId"] != null ? Convert.ToInt32(ViewData["ServerId"]) : 0;
+    string serverName = ViewData["ServerName"] != null ? ViewData["ServerName"].ToString() : "";
+}
+
+<style>
+    .cat-list .list-group-item { 
+        border: none; 
+        border-radius: 6px !important; 
+        margin-bottom: 4px; 
+        color: var(--text-secondary); 
+        transition: var(--transition);
+    }
+    
+    .cat-list .list-group-item:hover { 
+        background-color: var(--light-color); 
+        color: var(--primary-color); 
+    }
+    
+    .cat-list .list-group-item.active { 
+        background-color: rgba(52, 152, 219, 0.1) !important; 
+        color: var(--primary-color) !important;
+        font-weight: 500;
+    }
+    
+    .script-table { 
+        border-radius: var(--radius);
+        overflow: hidden;
+    }
+    
+    .script-table thead th {
+        font-size: 12px;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+    
+    .script-table tbody tr {
+        transition: background-color 0.2s ease;
+    }
+    
+    .script-table tbody tr:hover {
+        background-color: var(--light-color);
+    }
+    
+    .btn-script {
+        padding: 4px 8px;
+        font-size: 12px;
+        border-radius: var(--radius);
+        transition: var(--transition);
+    }
+    
+    .btn-run {
+        background-color: var(--success-color);
+        color: white;
+        border: none;
+    }
+    
+    .btn-run:hover {
+        background-color: #27ae60;
+        color: white;
+    }
+    
+    .btn-edit {
+        background-color: var(--primary-color);
+        color: white;
+        border: none;
+    }
+    
+    .btn-edit:hover {
+        background-color: #2980b9;
+        color: white;
+    }
+    
+    .btn-delete {
+        background-color: var(--danger-color);
+        color: white;
+        border: none;
+    }
+    
+    .btn-delete:hover {
+        background-color: #c0392b;
+        color: white;
+    }
+    
+    .os-tag {
+        padding: 2px 6px;
+        font-size: 11px;
+        border-radius: 10px;
+        font-weight: 500;
+    }
+    
+    .os-tag.linux {
+        background-color: rgba(255, 165, 0, 0.1);
+        color: #ff7b00;
+    }
+    
+    .os-tag.windows {
+        background-color: rgba(52, 152, 219, 0.1);
+        color: var(--primary-color);
+    }
+    
+    .os-tag.common {
+        background-color: rgba(102, 126, 234, 0.1);
+        color: #667eea;
+    }
+    
+    .script-type {
+        padding: 2px 6px;
+        font-size: 11px;
+        font-weight: 500;
+        border-radius: 10px;
+        background-color: rgba(46, 204, 113, 0.1);
+        color: var(--success-color);
+    }
+</style>
+
+<div class="row">
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0">脚本分类</h6>
+            </div>
+            <div class="card-body p-0">
+                <ul class="list-group list-group-flush cat-list">
+                    <li class="list-group-item active" data-cat-id="all">
+                        <i class="bi bi-folder-fill me-2"></i> 全部脚本
+                    </li>
+                    @if (Model != null)
+                    {
+                        foreach (var cat in Model)
+                        {
+                            <li class="list-group-item" data-cat-id="@cat.Id">
+                                <i class="bi bi-folder me-2"></i> @cat.Name
+                            </li>
+                        }
+                    }
+                </ul>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-9">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h6 class="mb-0">全部脚本</h6>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover table-borderless script-table mb-0">
+                        <thead class="bg-light">
+                            <tr>
+                                <th class="ps-3">名称</th>
+                                <th>类型</th>
+                                <th>适配系统</th>
+                                <th class="text-muted small">创建时间</th>
+                                <th class="text-end pe-3">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="scriptTableBody">
+                            @if (Model != null)
+                            {
+                                foreach (var cat in Model)
+                                {
+                                    if (cat.Scripts != null)
+                                    {
+                                        foreach (var script in cat.Scripts)
+                                        {
+                                            <tr class="script-row cat-@cat.Id">
+                                                <td class="ps-3">
+                                                    <div class="fw-medium">@script.Name</div>
+                                                </td>
+                                                <td>
+                                                    <span class="script-type">@script.Type</span>
+                                                </td>
+                                                <td>
+                                                    <span class="os-tag @(script.OS.ToLower())">
+                                                        @if (script.OS == "Common")
+                                                        {<i class="bi bi-globe me-1">通用</i> }
+                                                        else if (script.OS.Contains("Windows"))
+                                                        {<i class="bi bi-windows me-1">Windows</i> }
+                                                        else
+                                                        {<i class="bi bi-linux me-1">Linux</i> }
+                                                    </span>
+                                                </td>
+                                                <td class="text-muted small">
+                                                    @(script.CreatedAt.ToString("yyyy-MM-dd HH:mm"))
+                                                </td>
+                                                <td class="text-end pe-3">
+                                                    <div class="d-flex justify-content-end gap-2">
+                                                        <button class="btn btn-script btn-run" onclick="executeScript(@script.Id, @serverId, '@serverName')">
+                                                            <i class="bi bi-play-fill"></i> 运行
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        }
+                                    }
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // 分类切换
+    document.querySelectorAll('.cat-list .list-group-item').forEach(item => {
+        item.addEventListener('click', function() {
+            // 移除所有活动状态
+            document.querySelectorAll('.cat-list .list-group-item').forEach(li => li.classList.remove('active'));
+            
+            // 设置当前为活动状态
+            this.classList.add('active');
+            
+            // 获取选中的分类ID
+            const catId = this.dataset.catId;
+            
+            // 显示/隐藏脚本行
+            document.querySelectorAll('.script-row').forEach(row => {
+                if (catId === 'all' || row.classList.contains(`cat-${catId}`)) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+        });
+    });
+    
+    // 执行脚本
+    function executeScript(scriptId, serverId, serverName) {
+        console.log('执行脚本:', scriptId, '在服务器:', serverId, serverName);
+        
+        // 打开终端并执行脚本
+        if (typeof openFloatingTerminal !== 'undefined') {
+            openFloatingTerminal(serverId, serverName, scriptId);
+        } else {
+            alert('终端功能未加载，请刷新页面重试');
+        }
+    }
+    
+    // 初始化数据
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log('脚本库加载完成，服务器ID:', @serverId);
+    });
+</script>
