@@ -84,16 +84,15 @@ namespace EZPannel.Api.Controllers
            // 验证验证码
             if (string.IsNullOrEmpty(code))
             {
-                return Unauthorized(new { success = false, message = "请输入验证码" });
+                return Json(new { success = false, message = "请输入验证码" });
             }
             string storedCaptchaId = HttpContext.Session.GetString("CaptchaId");
             if (string.IsNullOrEmpty(storedCaptchaId) || !_captcha.Validate(storedCaptchaId, code))
             {
-                return Unauthorized(new { success = false, message = "验证码错误" });
+                return Json(new { success = false, message = "验证码错误" });
             }
             if (user == null || user.PasswordHash != password) {
-                ViewBag.Error = "用户名或密码错误";
-                return View();
+                return Json(new { success = false, message = "用户名或密码错误" });
             }
             HttpContext.Session.Remove("Code");
             var claims = new List<Claim>
@@ -108,12 +107,9 @@ namespace EZPannel.Api.Controllers
 
             // Also generate token for JS use (Axios/SignalR)
             var token = GenerateJwtToken(user);
-            // In MVC we can't easily return JSON and Redirect at the same time without JS.
-            // But we can store token in Cookie or localStorage via a bridge page.
-            // For simplicity, we'll store it in a cookie that JS can read, or just pass it to the view.
             Response.Cookies.Append("access_token", token);
             
-            return RedirectToAction("Index", "Home");
+            return Json(new { success = true, redirect = Url.Action("Index", "Home") });
         }
 
         [HttpPost("api/login")]

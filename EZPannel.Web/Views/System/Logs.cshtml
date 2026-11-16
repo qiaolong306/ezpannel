@@ -1,0 +1,164 @@
+@{
+    ViewData["Title"] = "查看日志";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h4 class="fw-bold mb-1">查看日志</h4>
+        <p class="text-muted small mb-0">按天记录的系统运行日志，默认展示最新文件末尾 300 行</p>
+    </div>
+    <div class="d-flex gap-2 align-items-center">
+        <div class="form-check form-switch mb-0">
+            <input class="form-check-input" type="checkbox" id="autoRefresh" checked>
+            <label class="form-check-label small text-muted" for="autoRefresh">自动刷新</label>
+        </div>
+        <select class="form-select form-select-sm" id="lineCount" style="width: 110px;">
+            <option value="100">100 行</option>
+            <option value="300" selected>300 行</option>
+            <option value="1000">1000 行</option>
+            <option value="3000">3000 行</option>
+        </select>
+        <button class="btn btn-outline-secondary btn-sm" onclick="loadLogContent()">
+            <i class="bi bi-arrow-clockwise"></i> 刷新
+        </button>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-3">
+        <div class="card border-0 shadow-sm rounded-3 h-100">
+            <div class="card-header border-0 bg-white py-3">
+                <h6 class="mb-0 fw-bold">日志文件</h6>
+            </div>
+            <div class="card-body p-0">
+                <div id="logFileList" class="list-group list-group-flush log-file-list">
+                    <div class="p-3 text-muted small">加载中...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-9">
+        <div class="card border-0 shadow-sm rounded-3 h-100">
+            <div class="card-header border-0 bg-white py-3 d-flex justify-content-between align-items-center">
+                <h6 class="mb-0 fw-bold" id="currentLogName">请选择日志文件</h6>
+                <small class="text-muted" id="currentLogMeta"></small>
+            </div>
+            <div class="card-body p-0">
+                <pre id="logContent" class="log-viewer mb-0">选择左侧日志文件以查看内容</pre>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .log-file-list { max-height: 620px; overflow-y: auto; }
+    .log-file-item {
+        cursor: pointer;
+        padding: 12px 16px;
+        border: none;
+        border-bottom: 1px solid #f0f1f3;
+        background: #fff;
+        transition: background-color .2s ease;
+    }
+    .log-file-item:hover { background: #f6f8f7; }
+    .log-file-item.active { background: #ecfdf5; border-left: 3px solid var(--primary-color); }
+    .log-file-item .name { font-size: 13px; font-weight: 500; color: #2f3437; }
+    .log-file-item .meta { font-size: 11px; color: #909399; margin-top: 2px; }
+    .log-viewer {
+        background: #1c2126;
+        color: #d6dde4;
+        font-family: Consolas, "Courier New", monospace;
+        font-size: 12.5px;
+        line-height: 1.65;
+        padding: 16px 18px;
+        height: 620px;
+        overflow: auto;
+        white-space: pre-wrap;
+        word-break: break-all;
+        border-radius: 0 0 8px 8px;
+        margin: 0;
+    }
+    .log-viewer::-webkit-scrollbar { width: 8px; height: 8px; }
+    .log-viewer::-webkit-scrollbar-thumb { background: rgba(255,255,255,.18); border-radius: 4px; }
+</style>
+
+<script>
+    let currentLogFile = '';
+    let refreshTimer = null;
+
+    async function loadLogFiles(selectFirst) {
+        try {
+            const res = await axios.get('/System/LogFiles');
+            const files = res.data || [];
+            const list = document.getElementById('logFileList');
+            if (files.length === 0) {
+                list.innerHTML = '<div class="p-3 text-muted small">暂无日志文件，系统产生运行日志后会自动出现在这里</div>';
+                return;
+            }
+            list.innerHTML = files.map(f => `
+                <div class="log-file-item ${f.name === currentLogFile ? 'active' : ''}" data-name="${f.name}" onclick="selectLogFile('${f.name}')">
+                    <div class="name">${f.name}</div>
+                    <div class="meta">${f.updated} · ${f.size}</div>
+                </div>`).join('');
+
+            if (selectFirst && !currentLogFile) {
+                selectLogFile(files[0].name);
+            }
+        } catch (err) {
+            console.error('加载日志列表失败', err);
+        }
+    }
+
+    function selectLogFile(name) {
+        currentLogFile = name;
+        document.getElementById('currentLogName').textContent = name;
+        document.querySelectorAll('.log-file-item').forEach(el => {
+            el.classList.toggle('active', el.dataset.name === name);
+        });
+        loadLogContent();
+    }
+
+    async function loadLogContent() {
+        if (!currentLogFile) {
+            return;
+        }
+        const lines = document.getElementById('lineCount').value;
+        try {
+            const res = await axios.get('/System/LogContent', {
+                params: { file: currentLogFile, lines: lines }
+            });
+            const box = document.getElementById('logContent');
+            const text = res.data || '';
+            const atBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 40;
+            box.textContent = text || '(空)';
+            if (atBottom) {
+                box.scrollTop = box.scrollHeight;
+            }
+            document.getElementById('currentLogMeta').textContent = `末尾 ${lines} 行`;
+        } catch (err) {
+            console.error('加载日志内容失败', err);
+        }
+    }
+
+    function startAutoRefresh() {
+        stopAutoRefresh();
+        refreshTimer = setInterval(() => {
+            if (document.getElementById('autoRefresh').checked) {
+                loadLogFiles(false);
+                loadLogContent();
+            }
+        }, 5000);
+    }
+
+    function stopAutoRefresh() {
+        if (refreshTimer) {
+            clearInterval(refreshTimer);
+            refreshTimer = null;
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        loadLogFiles(true);
+        startAutoRefresh();
+    });
+</script>

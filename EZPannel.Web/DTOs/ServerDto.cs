@@ -5,14 +5,12 @@ namespace EZPannel.Api.DTOs
         public int Id { get; set; }
         public string Name { get; set; } = string.Empty;
         public string Host { get; set; } = string.Empty;
-        public int Port { get; set; } = 22;
-        public string Username { get; set; } = string.Empty;
         public string OperatingSystem { get; set; } = "Linux";
         public DateTime CreatedAt { get; set; }
-        
-        // 用于测试连接或添加时传入，不持久化在 DTO 中返回给列表
-        public string? Password { get; set; }
-        public string? PrivateKey { get; set; }
+
+        // EZPannelClient Agent（HTTP/WebSocket 方式，替代 SSH）
+        public string? AgentKey { get; set; }
+        public int AgentPort { get; set; } = 9527;
 
         // 实时状态数据
         public ServerStatus? Status { get; set; }

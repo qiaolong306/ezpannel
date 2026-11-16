@@ -2,11 +2,11 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using EZPannel.Api.Data;
 using EZPannel.Api.Models;
+using EZPannel.Api.Services;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Linq;
 using System;
-using Renci.SshNet;
 using Microsoft.EntityFrameworkCore;
 using System.Globalization;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,11 +18,16 @@ public class ScriptAutoRunService {
     private readonly ISchedulerFactory _schedulerFactory;
     private IScheduler _scheduler;
     private readonly AppDbContext _context;
+    private readonly AgentFileService _agentFileService;
+    private readonly AgentService _agentService;
 
-    public ScriptAutoRunService(ILogger<ScriptAutoRunService> logger, ISchedulerFactory schedulerFactory, AppDbContext context) {
+    public ScriptAutoRunService(ILogger<ScriptAutoRunService> logger, ISchedulerFactory schedulerFactory, AppDbContext context,
+        AgentFileService agentFileService, AgentService agentService) {
         _logger = logger;
         _schedulerFactory = schedulerFactory;
         _context = context;
+        _agentFileService = agentFileService;
+        _agentService = agentService;
     }
 
     public async Task InitializeAutoRunJobs() {
@@ -121,84 +126,48 @@ public class ScriptAutoRunService {
 
     // Execute script on specific server
     private async Task ExecuteScriptOnServerAsync(Script script, Server server) {
-        string content = script.Content;
-        content = content.Replace("\r", "\n");
+        string content = script.Content.Replace("\r", "\n");
 
-        // Use SSH to connect to server and execute script
-        using (var client = new SshClient(server.Host, server.Port, server.Username, server.Password)) {
-            client.Connect();
+        // Determine script file name and path
+        string fileName = $"ez_script_{script.Id}.{script.Type}";
+        string remotePath = $"ez-script-tmp/{fileName}";
 
-            // Determine script file name and path
-            string fileName = $"ez_script_{script.Id}.{script.Type}";
-            string remotePath;
-
-            if (server.OperatingSystem == "Windows") {
-                remotePath = $"ez-script-tmp\\{fileName}";
-                // Ensure directory exists
-                using (var cmd = client.CreateCommand("if not exist \".\\ez-script-tmp\" mkdir \\ez-script-tmp\"")) {
-                    cmd.Execute();
-                }
-            }
-            else {
-                remotePath = $"ez-script-tmp/{fileName}";
-                // Ensure directory exists
-                using (var cmd = client.CreateCommand("mkdir -p ez-script-tmp")) {
-                    cmd.Execute();
-                }
-            }
-
-            // Upload script file
-            using (var sftp = new SftpClient(server.Host, server.Port, server.Username, server.Password)) {
-                sftp.Connect();
-                byte[] contentBytes = System.Text.Encoding.UTF8.GetBytes(content);
-                using (var stream = new System.IO.MemoryStream(contentBytes)) {
-                    sftp.UploadFile(stream, remotePath, true);
-                }
-                sftp.Disconnect();
-            }
-
-            // Execute script
-            string command;
-            if (server.OperatingSystem == "Windows") {
-                // Choose execution method based on script type
-                switch (script.Type) {
-                    case "bat":
-                        command = $"cmd.exe /c {remotePath}";
-                        break;
-                    case "ps1":
-                        command = $"powershell.exe -ExecutionPolicy Bypass -File {remotePath}";
-                        break;
-                    default:
-                        command = $"cmd.exe /c {remotePath}";
-                        break;
-                }
-            }
-            else {
-                // Add execute permission to script
-                using (var cmd = client.CreateCommand($"chmod +x {remotePath}")) {
-                    cmd.Execute();
-                }
-
-                // Choose execution method based on script type
-                switch (script.Type) {
-                    case "sh":
-                        command = $"bash {remotePath}";
-                        break;
-                    case "py":
-                        command = $"python3 {remotePath}";
-                        break;
-                    default:
-                        command = $"{remotePath}";
-                        break;
-                }
-            }
-            // Execute script command
-            using (var cmd = client.CreateCommand(command)) {
-                var result = cmd.Execute();
-                _logger.LogInformation($"Script execution result on server {server.Name}: {result}");
-            }
-            client.Disconnect();
+        // 通过 Agent 的文件接口创建目录并上传脚本，替代原有 SFTP
+        await _agentFileService.CreateDirectoryAsync(server, "ez-script-tmp");
+        using (var stream = new System.IO.MemoryStream(System.Text.Encoding.UTF8.GetBytes(content))) {
+            await _agentFileService.UploadFileAsync(server, remotePath, stream);
         }
+
+        // Execute script
+        string command;
+        if (server.OperatingSystem == "Windows") {
+            // Choose execution method based on script type
+            switch (script.Type) {
+                case "ps1":
+                    command = $"powershell.exe -ExecutionPolicy Bypass -File {remotePath}";
+                    break;
+                default:
+                    command = $"cmd.exe /c {remotePath}";
+                    break;
+            }
+        }
+        else {
+            // Choose execution method based on script type（附带执行权限）
+            switch (script.Type) {
+                case "sh":
+                    command = $"chmod +x {remotePath} && bash {remotePath}";
+                    break;
+                case "py":
+                    command = $"python3 {remotePath}";
+                    break;
+                default:
+                    command = $"chmod +x {remotePath} && {remotePath}";
+                    break;
+            }
+        }
+
+        var (success, output) = await _agentService.ExecuteCommandAsync(server, command);
+        _logger.LogInformation($"Script execution result on server {server.Name} (Success: {success}): {output}");
     }
 }
 
@@ -230,48 +199,121 @@ public class GlobalScriptAutoRunCheckJob : IJob {
         }
     }
 
-    // Determine if it's time to run the auto run task
+    // 判断是否到了执行时间
     private bool IsTimeToRun(ScriptAutoRunModel autoRun) {
-        if (!autoRun.IsAutoRun || string.IsNullOrWhiteSpace(autoRun.CronExpression)) {
-            _logger.LogDebug($"任务{autoRun.Name}(ID:{autoRun.Id})：未开启或Cron为空，无需执行");
+        if (!autoRun.IsAutoRun || string.IsNullOrWhiteSpace(autoRun.ScheduleType)) {
+            _logger.LogDebug($"任务{autoRun.Name}(ID:{autoRun.Id})：未开启或未配置调度方式，无需执行");
             return false;
         }
+
         try {
-            // 1. 实例化Quartz CronExpression（显式命名空间避免包冲突）
-            var cronExpression = new Quartz.CronExpression(autoRun.CronExpression);
-            // 核心1：指定固定中国东八区（生产环境推荐，脱离服务器时区依赖）
-            var chinaTz = TimeZoneInfo.FindSystemTimeZoneById("Asia/Shanghai");
-            cronExpression.TimeZone = chinaTz;
-            // 业务判断的当前本地时间（定义当前分钟范围，不变）
-            var nowLocal = DateTime.Now;
-            var currentMinuteStart = new DateTime(nowLocal.Year, nowLocal.Month, nowLocal.Day, nowLocal.Hour, nowLocal.Minute, 0);
-            var currentMinuteEnd = currentMinuteStart.AddMinutes(1);
-            // 核心2：将原有DateTimeOffset入参「标准化为纯UTC时间」（关键！确保Offset=0）
-            // 假设你原有入参基准时间为baseTimeOffset，先转换为UTC
-            var baseTimeOffset = new DateTimeOffset(currentMinuteStart, chinaTz.BaseUtcOffset); // 你的原始入参
-            var baseTimeUtc = baseTimeOffset.ToUniversalTime(); // 强制转为纯UTC，Offset=TimeSpan.Zero
-            // 核心3：调用方法（入参为纯UTC的DateTimeOffset，返回也是DateTimeOffset?）
-            DateTimeOffset? nextOccurrenceOffset = cronExpression.GetNextValidTimeAfter(baseTimeUtc);
-            if (!nextOccurrenceOffset.HasValue) {
+            var now = DateTime.Now;
+            var minuteStart = new DateTime(now.Year, now.Month, now.Day, now.Hour, now.Minute, 0);
+            var minuteEnd = minuteStart.AddMinutes(1);
+
+            // 计算“当前这一分钟”内应当触发的下一次调度时间
+            var scheduled = GetNextOccurrence(autoRun, minuteStart.AddSeconds(-1));
+            if (!scheduled.HasValue) {
                 return false;
             }
-            // 核心4：直接取返回值的LocalDateTime → 已自动转换为Asia/Shanghai本地时间
-            DateTime nextOccurrenceLocal = nextOccurrenceOffset.Value.LocalDateTime;
-            // 原有业务判断逻辑（完全不变，基于本地时间）
-            bool isInCurrentMinute = nextOccurrenceLocal >= currentMinuteStart && nextOccurrenceLocal <= currentMinuteEnd;
-            bool isNotRunYet = autoRun.LastRunTime == DateTime.MinValue || nextOccurrenceLocal > autoRun.LastRunTime;
 
-            if (isInCurrentMinute && isNotRunYet) {
-                return true;
+            // 调度时间必须落在当前这一分钟内
+            if (scheduled.Value < minuteStart || scheduled.Value >= minuteEnd) {
+                return false;
             }
-        }
-        catch (TimeZoneNotFoundException) {
-            _logger.LogError("服务器未配置中国时区（Asia/Shanghai），请检查系统时区！");
+
+            // 去重：避免同一分钟内重复执行
+            if (autoRun.LastRunTime != DateTime.MinValue && autoRun.LastRunTime >= minuteStart) {
+                return false;
+            }
+
+            return true;
         }
         catch (Exception ex) {
-            _logger.LogError(ex, $"任务{autoRun.Name}Cron计算异常，Cron：{autoRun.CronExpression}");
+            _logger.LogError(ex, $"任务{autoRun.Name}调度计算异常，调度类型：{autoRun.ScheduleType}");
+            return false;
         }
-        return false;
+    }
+
+    // 计算 afterTime 之后最近一次应当执行的时间（本地时间，精确到分钟）
+    private DateTime? GetNextOccurrence(ScriptAutoRunModel autoRun, DateTime afterTime) {
+        var runTime = ParseRunTime(autoRun.RunTime);
+        if (!runTime.HasValue) {
+            return null;
+        }
+
+        switch (autoRun.ScheduleType) {
+            case "Daily":
+                return GetDailyOccurrence(afterTime, runTime.Value);
+            case "Monthly":
+                return GetMonthlyOccurrence(afterTime, runTime.Value, autoRun.DayOfMonth);
+            case "Yearly":
+                return GetYearlyOccurrence(afterTime, runTime.Value, autoRun.Month, autoRun.DayOfMonth);
+            case "Once":
+                return GetOnceOccurrence(afterTime, runTime.Value, autoRun.RunDate);
+            default:
+                return null;
+        }
+    }
+
+    private TimeSpan? ParseRunTime(string? runTime) {
+        if (string.IsNullOrWhiteSpace(runTime)) {
+            return null;
+        }
+        return TimeSpan.TryParse(runTime, CultureInfo.InvariantCulture, out var ts) ? ts : (TimeSpan?)null;
+    }
+
+    // 按日：每天在指定时间执行
+    private DateTime GetDailyOccurrence(DateTime afterTime, TimeSpan runTime) {
+        var candidate = afterTime.Date.Add(runTime);
+        if (candidate <= afterTime) {
+            candidate = candidate.AddDays(1);
+        }
+        return candidate;
+    }
+
+    // 按月：每月第 dayOfMonth 天在指定时间执行（自动处理2月30日这类无效日期）
+    private DateTime? GetMonthlyOccurrence(DateTime afterTime, TimeSpan runTime, int? dayOfMonth) {
+        if (!dayOfMonth.HasValue || dayOfMonth.Value < 1 || dayOfMonth.Value > 31) {
+            return null;
+        }
+
+        var candidate = BuildDateInMonth(afterTime.Year, afterTime.Month, dayOfMonth.Value, runTime);
+        if (candidate <= afterTime) {
+            var nextMonth = afterTime.AddMonths(1);
+            candidate = BuildDateInMonth(nextMonth.Year, nextMonth.Month, dayOfMonth.Value, runTime);
+        }
+        return candidate;
+    }
+
+    // 按年：每年第 month 月第 dayOfMonth 天在指定时间执行
+    private DateTime? GetYearlyOccurrence(DateTime afterTime, TimeSpan runTime, int? month, int? dayOfMonth) {
+        if (!month.HasValue || month.Value < 1 || month.Value > 12 ||
+            !dayOfMonth.HasValue || dayOfMonth.Value < 1 || dayOfMonth.Value > 31) {
+            return null;
+        }
+
+        var candidate = BuildDateInMonth(afterTime.Year, month.Value, dayOfMonth.Value, runTime);
+        if (candidate <= afterTime) {
+            candidate = BuildDateInMonth(afterTime.Year + 1, month.Value, dayOfMonth.Value, runTime);
+        }
+        return candidate;
+    }
+
+    // 按日期：仅在指定日期执行一次
+    private DateTime? GetOnceOccurrence(DateTime afterTime, TimeSpan runTime, DateTime? runDate) {
+        if (!runDate.HasValue) {
+            return null;
+        }
+        var candidate = runDate.Value.Date.Add(runTime);
+        return candidate > afterTime ? candidate : (DateTime?)null;
+    }
+
+    // 构造某年某月某天的执行时间（超出当月天数的自动截取到月末）
+    private DateTime BuildDateInMonth(int year, int month, int dayOfMonth, TimeSpan runTime) {
+        var maxDay = DateTime.DaysInMonth(year, month);
+        var day = Math.Min(dayOfMonth, maxDay);
+        return new DateTime(year, month, day).Add(runTime);
     }
 
 

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
@@ -29,12 +30,13 @@ namespace EZPannel.Api.Services {
     public class DatabaseBackupService : IDatabaseBackupService {
         private readonly AppDbContext _context;
         private readonly ISchedulerFactory _schedulerFactory;
+        private readonly ISystemSettingsService _systemSettings;
         private readonly string _backupDirectory;
-        private const int _expireDays = 7;
 
-        public DatabaseBackupService(AppDbContext context, ISchedulerFactory schedulerFactory) {
+        public DatabaseBackupService(AppDbContext context, ISchedulerFactory schedulerFactory, ISystemSettingsService systemSettings) {
             _context = context;
             _schedulerFactory = schedulerFactory;
+            _systemSettings = systemSettings;
             _backupDirectory = Path.Combine(Directory.GetCurrentDirectory(), "Backups");
             Directory.CreateDirectory(_backupDirectory);
         }
@@ -87,17 +89,22 @@ namespace EZPannel.Api.Services {
         }
 
         /// <summary>
-        /// 清除过期备份文件夹
+        /// 清除过期备份文件夹（目录结构为 Backups/{数据库类型}/{yyyy-MM-dd}/）
         /// </summary>
-        private void ClearTimeoutFolders() {
-            var timeout = TimeSpan.FromDays(_expireDays);
-            var now = DateTime.Now;
+        private async Task ClearTimeoutFoldersAsync() {
+            var expireDays = await _systemSettings.GetDatabaseBackupExpireDaysAsync();
+            var timeout = TimeSpan.FromDays(expireDays);
+            var now = DateTime.UtcNow;
             try {
-                foreach (var folder in Directory.GetDirectories(_backupDirectory)) {
-                    if (DateTime.TryParse(Path.GetFileName(folder), out var folderTime)) {
-                        if (now - folderTime > timeout) {
-                            Directory.Delete(folder, true);
-                            Console.WriteLine($"[{now}] 已删除超时备份文件夹: {folder}");
+                foreach (var typeDirectory in Directory.GetDirectories(_backupDirectory)) {
+                    foreach (var folder in Directory.GetDirectories(typeDirectory)) {
+                        var folderName = Path.GetFileName(folder);
+                        if (DateTime.TryParseExact(folderName, "yyyy-MM-dd", CultureInfo.InvariantCulture,
+                                DateTimeStyles.None, out var folderTime)) {
+                            if (now - folderTime > timeout) {
+                                Directory.Delete(folder, true);
+                                Console.WriteLine($"[{now}] 已删除超时备份文件夹: {folder}");
+                            }
                         }
                     }
                 }
@@ -109,7 +116,7 @@ namespace EZPannel.Api.Services {
 
         public async Task<OperationResult> ExecuteBackup(int configId) {
             try {
-                ClearTimeoutFolders();
+                await ClearTimeoutFoldersAsync();
                 var config = await _context.DatabaseBackupConfigs
                     .FirstOrDefaultAsync(c => c.Id == configId);
 
@@ -568,53 +575,117 @@ namespace EZPannel.Api.Services {
         // 判断是否需要执行备份
         private bool IsTimeToBackup(DatabaseBackupConfig config) {
             try {
-                // 快速失败：Cron表达式为空/全空白，直接返回false
-                if (string.IsNullOrWhiteSpace(config.CronExpression)) {
+                // 快速失败：未配置调度方式，直接返回false
+                if (string.IsNullOrWhiteSpace(config.ScheduleType)) {
                     return false;
                 }
 
-                // 1. 实例化Quartz CronExpression（确保是Quartz命名空间）
-                var cronExpression = new CronExpression(config.CronExpression);
+                var now = DateTime.Now;
+                var windowStart = now.AddMinutes(-10);
 
-                // 2. 核心：指定时区（生产推荐固定中国东八区，脱离服务器依赖；也可保留Local）
-                var targetTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Asia/Shanghai"); // 推荐生产使用
-                                                                                           // var targetTimeZone = TimeZoneInfo.Local; // 若需依赖服务器本地时区，启用此行
-                cronExpression.TimeZone = targetTimeZone;
-
-                // 3. 获取当前带时区的时间（DateTimeOffset，避免Kind歧义）
-                var now = DateTimeOffset.Now;
-                // 基准时间：向前偏移10分钟，且强制转为UTC（Quartz入参必须为UTC，否则时区配置失效）
-                var baseTimeUtc = now.AddMinutes(-10).ToUniversalTime();
-
-                // 4. 计算下一次执行时间（入参UTC，返回DateTimeOffset?，已带时区转换）
-                var nextExecution = cronExpression.GetNextValidTimeAfter(baseTimeUtc);
-
-                // 快速失败：无有效执行时间
-                if (!nextExecution.HasValue) {
+                // 计算“最近10分钟窗口”内应当触发的最近一次调度时间
+                var scheduled = GetNextOccurrence(config, windowStart.AddSeconds(-1));
+                if (!scheduled.HasValue) {
                     return false;
                 }
 
-                // 5. 关键：将返回的UTC时间转换为「目标时区本地时间」（用于业务判断）
-                var nextExecutionLocal = nextExecution.Value.LocalDateTime;
-                var nowLocal = now.LocalDateTime; // 当前时间转目标时区本地时间，保持判断基准一致
-
-                // 6. 核心判断：最近10分钟内需要执行 + 未执行过/未在该时间段执行过（防重复）
-                // 条件1：下一次执行时间在【当前时间-10分钟，当前时间】范围内
-                // 条件2：无最后备份时间 或 下一次执行时间晚于最后备份时间（避免重复备份）
-                bool isInLast10Minutes = nextExecutionLocal >= nowLocal.AddMinutes(-10) && nextExecutionLocal <= nowLocal;
-                bool isNotBackedUpYet = !config.LastBackupTime.HasValue || nextExecutionLocal > config.LastBackupTime.Value;
-
-                if (isInLast10Minutes && isNotBackedUpYet) {
-                    return true;
+                // 调度时间必须落在最近10分钟窗口内
+                if (scheduled.Value < windowStart || scheduled.Value > now) {
+                    return false;
                 }
-            }
-            catch (TimeZoneNotFoundException) {
-                Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 检查配置{config.Name}失败：服务器未配置中国时区（Asia/Shanghai），请检查时区配置");
+
+                // 去重：该调度时间已经备份过则跳过
+                if (config.LastBackupTime.HasValue && config.LastBackupTime.Value >= scheduled.Value) {
+                    return false;
+                }
+
+                return true;
             }
             catch (Exception ex) {
                 Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 检查配置{config.Name}的备份时间失败: {ex.Message}");
             }
             return false;
+        }
+
+        // 计算 afterTime 之后最近一次应当执行的时间（本地时间，精确到分钟）
+        private DateTime? GetNextOccurrence(DatabaseBackupConfig config, DateTime afterTime) {
+            var runTime = ParseRunTime(config.RunTime);
+            if (!runTime.HasValue) {
+                return null;
+            }
+
+            switch (config.ScheduleType) {
+                case "Daily":
+                    return GetDailyOccurrence(afterTime, runTime.Value);
+                case "Monthly":
+                    return GetMonthlyOccurrence(afterTime, runTime.Value, config.DayOfMonth);
+                case "Yearly":
+                    return GetYearlyOccurrence(afterTime, runTime.Value, config.Month, config.DayOfMonth);
+                case "Once":
+                    return GetOnceOccurrence(afterTime, runTime.Value, config.RunDate);
+                default:
+                    return null;
+            }
+        }
+
+        private TimeSpan? ParseRunTime(string? runTime) {
+            if (string.IsNullOrWhiteSpace(runTime)) {
+                return null;
+            }
+            return TimeSpan.TryParse(runTime, CultureInfo.InvariantCulture, out var ts) ? ts : (TimeSpan?)null;
+        }
+
+        // 按日：每天在指定时间执行
+        private DateTime GetDailyOccurrence(DateTime afterTime, TimeSpan runTime) {
+            var candidate = afterTime.Date.Add(runTime);
+            if (candidate <= afterTime) {
+                candidate = candidate.AddDays(1);
+            }
+            return candidate;
+        }
+
+        // 按月：每月第 dayOfMonth 天在指定时间执行（自动处理2月30日这类无效日期）
+        private DateTime? GetMonthlyOccurrence(DateTime afterTime, TimeSpan runTime, int? dayOfMonth) {
+            if (!dayOfMonth.HasValue || dayOfMonth.Value < 1 || dayOfMonth.Value > 31) {
+                return null;
+            }
+
+            var candidate = BuildDateInMonth(afterTime.Year, afterTime.Month, dayOfMonth.Value, runTime);
+            if (candidate <= afterTime) {
+                var nextMonth = afterTime.AddMonths(1);
+                candidate = BuildDateInMonth(nextMonth.Year, nextMonth.Month, dayOfMonth.Value, runTime);
+            }
+            return candidate;
+        }
+
+        // 按年：每年第 month 月第 dayOfMonth 天在指定时间执行
+        private DateTime? GetYearlyOccurrence(DateTime afterTime, TimeSpan runTime, int? month, int? dayOfMonth) {
+            if (!month.HasValue || month.Value < 1 || month.Value > 12 ||
+                !dayOfMonth.HasValue || dayOfMonth.Value < 1 || dayOfMonth.Value > 31) {
+                return null;
+            }
+
+            var candidate = BuildDateInMonth(afterTime.Year, month.Value, dayOfMonth.Value, runTime);
+            if (candidate <= afterTime) {
+                candidate = BuildDateInMonth(afterTime.Year + 1, month.Value, dayOfMonth.Value, runTime);
+            }
+            return candidate;
+        }
+
+        // 按日期：仅在指定日期执行一次
+        private DateTime? GetOnceOccurrence(DateTime afterTime, TimeSpan runTime, DateTime? runDate) {
+            if (!runDate.HasValue) {
+                return null;
+            }
+            var candidate = runDate.Value.Date.Add(runTime);
+            return candidate > afterTime ? candidate : (DateTime?)null;
+        }
+
+        // 构造某年某月某天的执行时间（超出当月天数的自动截取到月末）
+        private DateTime BuildDateInMonth(int year, int month, int dayOfMonth, TimeSpan runTime) {
+            var maxDay = DateTime.DaysInMonth(year, month);
+            var day = Math.Min(dayOfMonth, maxDay);
+            return new DateTime(year, month, day).Add(runTime);
         }
     }
 }

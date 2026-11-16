@@ -26,7 +26,7 @@ string os = ViewData["ServerVersion"] as string;
                             <h5 class="text-muted mb-1">CPU</h5>
                             <div class="d-flex items-center">
                                 <span class="h3 font-bold">0%</span>
-                                <span class="ml-2 text-sm">xxxx</span>
+                                <span class="ml-2 text-sm">0核</span>
                             </div>
                         </div>
                         <div class="circle-progress" style="width: 80px; height: 80px;">
@@ -49,15 +49,15 @@ string os = ViewData["ServerVersion"] as string;
                             <h5 class="text-muted mb-1">内存</h5>
                             <div class="d-flex items-center">
                                 <span class="h3 font-bold">0%</span>
-                                <span class="ml-2 text-sm">0MB / 0GB</span>
+                                <span class="ml-2 text-sm">0MB / 0MB</span>
                             </div>
                         </div>
                         <div class="circle-progress" style="width: 80px; height: 80px;">
                             <svg viewBox="0 0 100 100" style="transform: rotate(-90deg);">
                                 <circle cx="50" cy="50" r="45" fill="none" stroke="#e0e0e0" stroke-width="8"></circle>
-                                <circle cx="50" cy="50" r="45" fill="none" stroke="#4caf50" stroke-width="8" stroke-dasharray="283" stroke-dashoffset="269"></circle>
+                                <circle cx="50" cy="50" r="45" fill="none" stroke="#4caf50" stroke-width="8" stroke-dasharray="283" stroke-dashoffset="283"></circle>
                             </svg>
-                            <div class="text-center" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 16px;">5%</div>
+                            <div class="text-center" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 16px;">0%</div>
                         </div>
                     </div>
                 </div>
@@ -90,25 +90,46 @@ string os = ViewData["ServerVersion"] as string;
 
     <!-- 进程列表 -->
     <div class="card mb-4">
-        <div class="card-header">
+        <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
             <h5 class="mb-0">进程列表</h5>
+            <div class="d-flex flex-wrap align-items-center gap-2">
+                <input type="text" class="form-control form-control-sm" id="processNameSearch"
+                       placeholder="搜索进程名" style="width: 180px;" oninput="onProcessFilterChange()" />
+                <input type="text" class="form-control form-control-sm" id="processPidSearch"
+                       placeholder="搜索 PID" style="width: 130px;" oninput="onProcessFilterChange()" />
+                <select class="form-select form-select-sm" id="processPageSize" style="width: 110px;" onchange="onProcessPageSizeChange()">
+                    <option value="20" selected>20 条/页</option>
+                    <option value="50">50 条/页</option>
+                    <option value="100">100 条/页</option>
+                    <option value="200">200 条/页</option>
+                </select>
+                <button class="btn btn-sm btn-outline-secondary" onclick="clearProcessFilter()">
+                    <i class="bi bi-x-circle"></i> 清空
+                </button>
+            </div>
         </div>
         <div class="card-body">
             <div class="table-responsive">
-                <table class="table table-hover">
+                <table class="table table-hover align-middle mb-0">
                     <thead>
                         <tr>
-                            <th>进程名</th>
+                            <th class="sortable" onclick="onProcessSortChange('name')">进程名 <i id="sortIconName" class="bi bi-arrow-down-up text-muted"></i></th>
                             <th>PID</th>
-                            <th>CPU%</th>
-                            <th>内存(MB)</th>
+                            <th class="sortable" onclick="onProcessSortChange('cpu')">CPU% <i id="sortIconCpu" class="bi bi-arrow-down-up text-muted"></i></th>
+                            <th class="sortable" onclick="onProcessSortChange('mem')">内存(MB) <i id="sortIconMem" class="bi bi-arrow-down-up text-muted"></i></th>
                             <th>状态</th>
                             <th>操作</th>
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody id="processTableBody">
                     </tbody>
                 </table>
+            </div>
+            <div class="d-flex flex-wrap justify-content-between align-items-center mt-3 gap-2">
+                <small class="text-muted" id="processPageInfo">共 0 条</small>
+                <nav>
+                    <ul class="pagination pagination-sm mb-0" id="processPagination"></ul>
+                </nav>
             </div>
         </div>
     </div>
@@ -136,6 +157,16 @@ string os = ViewData["ServerVersion"] as string;
     .circle-progress {
         position: relative;
     }
+
+    .sortable {
+        cursor: pointer;
+        user-select: none;
+        white-space: nowrap;
+    }
+
+    .sortable:hover {
+        color: var(--primary-color, #409eff);
+    }
     
     .circle-progress svg {
         width: 100%;
@@ -148,8 +179,13 @@ string os = ViewData["ServerVersion"] as string;
     <script>
         // 获取当前服务器ID
         const serverId = @(ViewData["ServerId"] ?? 0);
-        let cpuCores = 1;
         // 更新服务器状态数据
+        // 0 是合法采集值（机器空闲时 CPU 真会降到 0%），不能直接拿来做真假判断，
+        // 否则 0% 会被当成"没有数据"而跳过更新，卡片会停留在上一次的旧数值，看起来像采集卡住了。
+        function hasStatValue(value) {
+            return value !== undefined && value !== null;
+        }
+
         function updateStats() {
             console.log('Updating stats...');
             // 调用API获取服务器信息
@@ -157,27 +193,32 @@ string os = ViewData["ServerVersion"] as string;
                 .then(response => {
                     const data = response.data;
                     console.log('Server info:', data);
+                    // 离线时后端返回的是默认空对象（各项全 0、核心数 "1"），直接渲染会显示成
+                    // "0% / 0MB / 1核心" 这种假数据，因此离线时整体跳过，保留上一次的正常显示。
+                    if (!data.status || data.status.isOnline === false) {
+                        return;
+                    }
                     // 更新CPU信息
-                    if (data.status && data.status.cpuUsage) {
+                    if (hasStatValue(data.status.cpuUsage)) {
                         document.querySelector('.row.mb-4 .col-md-3:nth-child(1) .card .h3').textContent = `${data.status.cpuUsage}%`;
-                        document.querySelector('.row.mb-4 .col-md-3:nth-child(1) .card .ml-2').textContent = `${data.status.cpuCores}核心`;
-                        updateCircleProgress(1, data.status.cpuUsage);
+                        document.querySelector('.row.mb-4 .col-md-3:nth-child(1) .card .ml-2').textContent = `${data.status.cpuCores || '-'}核心`;
+                        updateCircleProgress(0, data.status.cpuUsage);
                         document.querySelector('.row.mb-4 .col-md-3:nth-child(1) .card .text-center').textContent = `${data.status.cpuUsage}%`;
                     }
 
                     // 更新内存信息
-                    if (data.status && data.status.memUsage) {
+                    if (hasStatValue(data.status.memUsage)) {
                         document.querySelector('.row.mb-4 .col-md-3:nth-child(2) .card .h3').textContent = `${data.status.memUsage}%`;
                         document.querySelector('.row.mb-4 .col-md-3:nth-child(2) .card .ml-2').textContent = `${data.status.memUsed}MB / ${data.status.memTotal}MB`;
-                        updateCircleProgress(2, data.status.memUsage);
+                        updateCircleProgress(1, data.status.memUsage);
                         document.querySelector('.row.mb-4 .col-md-3:nth-child(2) .card .text-center').textContent = `${data.status.memUsage}%`;
                     }
 
                     // 更新硬盘信息
-                    if (data.status && data.status.diskUsage) {
+                    if (hasStatValue(data.status.diskUsage)) {
                         document.querySelector('.row.mb-4 .col-md-3:nth-child(3) .card .h3').textContent = `${data.status.diskUsage}%`;
                         document.querySelector('.row.mb-4 .col-md-3:nth-child(3) .card .ml-2').textContent = `${data.status.diskUsed} / ${data.status.diskTotal}`;
-                        updateCircleProgress(3, data.status.diskUsage);
+                        updateCircleProgress(2, data.status.diskUsage);
                         document.querySelector('.row.mb-4 .col-md-3:nth-child(3) .card .text-center').textContent = `${data.status.diskUsage}%`;
                     }
                     udpateProcesss();
@@ -215,62 +256,236 @@ string os = ViewData["ServerVersion"] as string;
 
         
         // 更新圆形进度条
+        // index 是 0 基下标：页面自上而下三个进度圈依次为 0=CPU、1=内存、2=硬盘。
+        // 之前调用处传的是 1/2/3，导致 CPU 圈永远匹配不到（下标 0 无人使用），硬盘圈越界为 undefined，
+        // 表现为"圆弧一直不动"。
         function updateCircleProgress(index, percentage) {
             const circles = document.querySelectorAll('.circle-progress circle:last-child');
-            if (circles[index]) {
-                try {
-                    // 确保percentage是有效的数字
-                    percentage = parseFloat(percentage) || 0;
-                    // 限制在0-100范围内
-                    percentage = Math.max(0, Math.min(100, percentage));
-                    
-                    const circle = circles[index];
-                    const radius = circle.r.baseVal.value;
-                    const circumference = radius * 2 * Math.PI;
-                    const offset = circumference - (percentage / 100) * circumference;
-                    circle.style.strokeDasharray = `${circumference} ${circumference}`;
-                    circle.style.strokeDashoffset = offset;
-                } catch (e) {
-                    console.error('Error updating circle progress:', e);
-                }
+            if (!circles[index]) {
+                return;
+            }
+            try {
+                // 确保percentage是有效的数字
+                percentage = parseFloat(percentage) || 0;
+                // 限制在0-100范围内
+                percentage = Math.max(0, Math.min(100, percentage));
+
+                const circle = circles[index];
+                const radius = circle.r.baseVal.value;
+                const circumference = radius * 2 * Math.PI;
+                const offset = circumference - (percentage / 100) * circumference;
+                circle.style.strokeDasharray = `${circumference} ${circumference}`;
+                circle.style.strokeDashoffset = offset;
+            } catch (e) {
+                console.error('Error updating circle progress:', e);
             }
         }
         
         // 更新进程列表
-        function updateProcessList(processes) {
-            const tbody = document.querySelector('table tbody');
-            if (!tbody) return;
-            // 清空现有进程列表
-            tbody.innerHTML = '';
-            // 确保是数组
-            processes = Array.isArray(processes) ? processes : [];
-            //按内存排序大到小
-            processes.sort((a, b) => (b.mem || 0) - (a.mem || 0));
-            try {
-                // 添加进程到表格
-                processes.forEach(process => {
-                    const row = document.createElement('tr');
-                    row.innerHTML = `
-                        <td>${process.name || process.comm}</td>
-                        <td>${process.id || process.pid}</td>
-                        <td>${process.cpu/cpuCores || 0} %</td>
-                        <td>${process.mem || 0} MB</td>
-                        <td><span class="badge bg-success">运行中</span></td>
-                        <td>
-                            <div class="btn-group btn-group-sm">
-                                <button class="btn btn-outline-info" onclick="viewProcessDetail(${process.id || process.pid})" title="查看详情">
-                                    <i class="bi bi-eye"></i>
-                                </button>
-                                <button class="btn btn-outline-danger" onclick="killProcess(${process.id || process.pid}, '${process.name || process.comm}')" title="结束进程">
-                                    <i class="bi bi-x-lg"></i>
-                                </button>
-                            </div>
-                        </td>`;
-                    tbody.appendChild(row);
-                });
-            } catch (error) {
-                console.error('Error parsing process data:', error);
+        let allProcesses = [];
+        let processPage = 1;
+        let processPageSize = 20;
+        let processSortKey = 'name';
+        let processSortDir = 'asc';
+
+        function processNameOf(p) {
+            return String(p.name || p.comm || '');
+        }
+
+        function processPidOf(p) {
+            return (p.id !== undefined && p.id !== null) ? p.id : p.pid;
+        }
+
+        // 后端返回的 cpu 已是整机 0-100 的归一化百分比（Windows 按逻辑处理器采样、Linux 用 ps %cpu 除以 nproc），
+        // 前端不得再除以核心数，否则会重复归一化导致数值偏小。
+        function processCpuOf(p) {
+            const value = parseFloat(p.cpu);
+            if (!isFinite(value)) return 0;
+            return value;
+        }
+
+        function processMemOf(p) {
+            const value = parseFloat(p.mem);
+            return isFinite(value) ? value : 0;
+        }
+
+        // 转义后用于拼接行内 JS 字符串（进程名可能带引号）
+        function escapeJsString(text) {
+            return String(text == null ? '' : text).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        }
+
+        function onProcessFilterChange() {
+            processPage = 1;
+            renderProcessTable();
+        }
+
+        function onProcessPageSizeChange() {
+            processPageSize = parseInt(document.getElementById('processPageSize').value, 10) || 20;
+            processPage = 1;
+            renderProcessTable();
+        }
+
+        // 点击表头切换排序：同一列再点一次反向；切换列时名称默认升序、数值列默认降序
+        function onProcessSortChange(key) {
+            if (processSortKey === key) {
+                processSortDir = processSortDir === 'asc' ? 'desc' : 'asc';
+            } else {
+                processSortKey = key;
+                processSortDir = key === 'name' ? 'asc' : 'desc';
             }
+            processPage = 1;
+            renderProcessTable();
+        }
+
+        function compareProcesses(a, b) {
+            let result;
+            if (processSortKey === 'cpu') {
+                result = processCpuOf(a) - processCpuOf(b);
+            } else if (processSortKey === 'mem') {
+                result = processMemOf(a) - processMemOf(b);
+            } else {
+                result = processNameOf(a).localeCompare(processNameOf(b), undefined, { numeric: true, sensitivity: 'base' });
+            }
+            // 数值相同时按名称兜底，保证翻页顺序稳定
+            if (result === 0 && processSortKey !== 'name') {
+                result = processNameOf(a).localeCompare(processNameOf(b), undefined, { numeric: true, sensitivity: 'base' });
+            }
+            return processSortDir === 'asc' ? result : -result;
+        }
+
+        function updateSortIndicators() {
+            const icons = {
+                name: document.getElementById('sortIconName'),
+                cpu: document.getElementById('sortIconCpu'),
+                mem: document.getElementById('sortIconMem')
+            };
+            Object.keys(icons).forEach(function(key) {
+                const el = icons[key];
+                if (!el) return;
+                if (processSortKey !== key) {
+                    el.className = 'bi bi-arrow-down-up text-muted';
+                } else if (processSortDir === 'asc') {
+                    el.className = 'bi bi-sort-up';
+                } else {
+                    el.className = 'bi bi-sort-down';
+                }
+            });
+        }
+
+        function clearProcessFilter() {
+            document.getElementById('processNameSearch').value = '';
+            document.getElementById('processPidSearch').value = '';
+            processPage = 1;
+            renderProcessTable();
+        }
+
+        // 按搜索条件过滤后，按当前排序状态排序
+        function getFilteredProcesses() {
+            const nameKey = document.getElementById('processNameSearch').value.trim().toLowerCase();
+            const pidKey = document.getElementById('processPidSearch').value.trim();
+            return allProcesses.filter(function(p) {
+                if (nameKey && !processNameOf(p).toLowerCase().includes(nameKey)) return false;
+                if (pidKey && !String(processPidOf(p)).includes(pidKey)) return false;
+                return true;
+            }).sort(compareProcesses);
+        }
+
+        function updateProcessList(processes) {
+            allProcesses = Array.isArray(processes) ? processes : [];
+            renderProcessTable();
+        }
+
+        function gotoProcessPage(page) {
+            processPage = page;
+            renderProcessTable();
+        }
+
+        function renderProcessTable() {
+            const tbody = document.getElementById('processTableBody');
+            if (!tbody) return;
+
+            updateSortIndicators();
+
+            const list = getFilteredProcesses();
+            const total = list.length;
+            const totalPages = Math.max(1, Math.ceil(total / processPageSize));
+            if (processPage > totalPages) processPage = totalPages;
+            if (processPage < 1) processPage = 1;
+
+            const start = (processPage - 1) * processPageSize;
+            const pageItems = list.slice(start, start + processPageSize);
+
+            if (pageItems.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">没有匹配的进程</td></tr>';
+            } else {
+                tbody.innerHTML = pageItems.map(function(process) {
+                    const pid = processPidOf(process);
+                    const name = processNameOf(process);
+                    return '<tr>'
+                        + '<td>' + name + '</td>'
+                        + '<td>' + pid + '</td>'
+                        + '<td>' + processCpuOf(process) + ' %</td>'
+                        + '<td>' + processMemOf(process) + ' MB</td>'
+                        + '<td><span class="badge bg-success">运行中</span></td>'
+                        + '<td>'
+                        + '<div class="btn-group btn-group-sm">'
+                        + '<button class="btn btn-outline-info" onclick="viewProcessDetail(' + pid + ')" title="查看详情"><i class="bi bi-eye"></i></button>'
+                        + '<button class="btn btn-outline-danger" onclick="killProcess(' + pid + ', \'' + escapeJsString(name) + '\')" title="结束进程"><i class="bi bi-x-lg"></i></button>'
+                        + '</div>'
+                        + '</td>'
+                        + '</tr>';
+                }).join('');
+            }
+
+            renderProcessPagination(total, totalPages, start, pageItems.length);
+        }
+
+        function renderProcessPagination(total, totalPages, start, shown) {
+            const info = document.getElementById('processPageInfo');
+            if (info) {
+                if (total === 0) {
+                    info.textContent = '共 0 条';
+                } else {
+                    info.textContent = '共 ' + total + ' 条，第 ' + processPage + '/' + totalPages
+                        + ' 页（' + (start + 1) + '-' + (start + shown) + '）';
+                }
+            }
+
+            const ul = document.getElementById('processPagination');
+            if (!ul) return;
+
+            const parts = [];
+            parts.push('<li class="page-item ' + (processPage === 1 ? 'disabled' : '') + '">'
+                + '<a class="page-link" href="javascript:void(0)" onclick="gotoProcessPage(' + (processPage - 1) + ')">上一页</a></li>');
+
+            const windowSize = 5;
+            let first = Math.max(1, processPage - Math.floor(windowSize / 2));
+            let last = Math.min(totalPages, first + windowSize - 1);
+            if (last - first + 1 < windowSize) {
+                first = Math.max(1, last - windowSize + 1);
+            }
+
+            if (first > 1) {
+                parts.push('<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="gotoProcessPage(1)">1</a></li>');
+                if (first > 2) {
+                    parts.push('<li class="page-item disabled"><span class="page-link">…</span></li>');
+                }
+            }
+            for (let i = first; i <= last; i++) {
+                parts.push('<li class="page-item ' + (i === processPage ? 'active' : '') + '">'
+                    + '<a class="page-link" href="javascript:void(0)" onclick="gotoProcessPage(' + i + ')">' + i + '</a></li>');
+            }
+            if (last < totalPages) {
+                if (last < totalPages - 1) {
+                    parts.push('<li class="page-item disabled"><span class="page-link">…</span></li>');
+                }
+                parts.push('<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="gotoProcessPage(' + totalPages + ')">' + totalPages + '</a></li>');
+            }
+
+            parts.push('<li class="page-item ' + (processPage === totalPages ? 'disabled' : '') + '">'
+                + '<a class="page-link" href="javascript:void(0)" onclick="gotoProcessPage(' + (processPage + 1) + ')">下一页</a></li>');
+
+            ul.innerHTML = parts.join('');
         }
         
         // 查看进程详情

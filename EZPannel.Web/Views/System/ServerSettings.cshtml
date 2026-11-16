@@ -1,0 +1,106 @@
+@{
+    ViewData["Title"] = "服务器设置";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h4 class="fw-bold mb-1">服务器设置</h4>
+        <p class="text-muted small mb-0">控制台自身的运行参数，保存后立即生效</p>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-8">
+        <div class="card border-0 shadow-sm rounded-3">
+            <div class="card-header border-0 bg-white py-3">
+                <h6 class="mb-0 fw-bold"><i class="bi bi-database-check me-2"></i>数据库备份</h6>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label for="databaseBackupExpireDays" class="form-label fw-semibold">
+                        数据库备份过期天数
+                    </label>
+                    <div class="input-group" style="max-width: 260px;">
+                        <input type="number" class="form-control" id="databaseBackupExpireDays"
+                               min="1" max="3650" step="1" value="7" />
+                        <span class="input-group-text">天</span>
+                    </div>
+                    <div class="form-text">
+                        备份目录按 <code>数据库类型/日期</code> 存放，超过该天数的备份文件夹会在每次执行备份时被自动删除。
+                        默认 7 天，允许范围 1 ~ 3650 天。
+                    </div>
+                </div>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-primary" onclick="saveServerSettings()">
+                        <i class="bi bi-check2"></i> 保存设置
+                    </button>
+                    <button class="btn btn-outline-secondary" onclick="loadServerSettings()">
+                        <i class="bi bi-arrow-clockwise"></i> 重新加载
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card border-0 shadow-sm rounded-3 h-100">
+            <div class="card-header border-0 bg-white py-3">
+                <h6 class="mb-0 fw-bold"><i class="bi bi-info-circle me-2"></i>说明</h6>
+            </div>
+            <div class="card-body">
+                <ul class="mb-0 ps-3 small text-muted">
+                    <li class="mb-2">过期清理在每次备份任务执行前触发。</li>
+                    <li class="mb-2">仅删除备份文件所在的日期目录，不影响备份日志记录。</li>
+                    <li>修改为更小的值会让下一次备份时删除更多历史备份，请谨慎设置。</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    async function loadServerSettings() {
+        try {
+            const res = await axios.get('/System/GetServerSettings');
+            if (res.data && res.data.success) {
+                const input = document.getElementById('databaseBackupExpireDays');
+                input.value = res.data.databaseBackupExpireDays;
+                input.min = res.data.minExpireDays;
+                input.max = res.data.maxExpireDays;
+            }
+        } catch (err) {
+            console.error('加载服务器设置失败', err);
+            toastr.error('加载服务器设置失败');
+        }
+    }
+
+    async function saveServerSettings() {
+        const input = document.getElementById('databaseBackupExpireDays');
+        const days = parseInt(input.value, 10);
+        const min = parseInt(input.min, 10) || 1;
+        const max = parseInt(input.max, 10) || 3650;
+
+        if (isNaN(days) || days < min || days > max) {
+            toastr.error(`数据库备份过期天数必须在 ${min} 到 ${max} 之间`);
+            input.focus();
+            return;
+        }
+
+        try {
+            const form = new URLSearchParams();
+            form.append('databaseBackupExpireDays', days);
+            const res = await axios.post('/System/SaveServerSettings', form);
+            if (res.data && res.data.success) {
+                toastr.success(res.data.message || '保存成功');
+            } else {
+                toastr.error((res.data && res.data.message) || '保存失败');
+            }
+        } catch (err) {
+            console.error('保存服务器设置失败', err);
+            toastr.error('保存服务器设置失败');
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', loadServerSettings);
+</script>
+}

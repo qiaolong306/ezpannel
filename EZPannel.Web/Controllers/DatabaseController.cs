@@ -33,6 +33,18 @@ namespace EZPannel.Api.Controllers
             return View(databases);
         }
 
+        // 数据库详情页：数据库 / 表 / 视图 / 函数 / 查询
+        public async Task<IActionResult> Detail(int id)
+        {
+            ViewData["ActiveMenu"] = "database";
+            var database = await _context.Databases.FindAsync(id);
+            if (database == null)
+            {
+                return NotFound();
+            }
+            return View(database);
+        }
+
         public IActionResult Create()
         {
             return View();
@@ -224,6 +236,158 @@ namespace EZPannel.Api.Controllers
         }
     }
 
+    // ===== 元数据查询（详情页：数据库 / 表 / 视图 / 函数） =====
+    [HttpGet]
+    public async Task<IActionResult> GetDatabases(int id)
+    {
+        try
+        {
+            var database = await _context.Databases.FindAsync(id);
+            if (database == null) return NotFound();
+
+            string sql = database.Type.ToLower() switch
+            {
+                "mysql" => "SHOW DATABASES",
+                "postgresql" => "SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname",
+                "sqlserver" => "SELECT name FROM sys.databases ORDER BY name",
+                _ => throw new NotSupportedException($"不支持的数据库类型: {database.Type}")
+            };
+
+            var items = await ExecuteStringListQuery(database, sql);
+            return Json(new { success = true, items = items });
+        }
+        catch (Exception ex)
+        {
+            return Json(new { success = false, error = ex.Message });
+        }
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> GetTables(int id, string databaseName)
+    {
+        try
+        {
+            var database = await _context.Databases.FindAsync(id);
+            if (database == null) return NotFound();
+
+            string sql = database.Type.ToLower() switch
+            {
+                "mysql" => $"SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = '{EscapeSql(databaseName)}' AND TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_NAME",
+                "postgresql" => "SELECT table_name FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog','information_schema') ORDER BY table_schema, table_name",
+                "sqlserver" => "SELECT name FROM sys.tables ORDER BY name",
+                _ => throw new NotSupportedException($"不支持的数据库类型: {database.Type}")
+            };
+
+            var items = await ExecuteStringListQuery(database, sql, databaseName);
+            return Json(new { success = true, items = items });
+        }
+        catch (Exception ex)
+        {
+            return Json(new { success = false, error = ex.Message });
+        }
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> GetViews(int id, string databaseName)
+    {
+        try
+        {
+            var database = await _context.Databases.FindAsync(id);
+            if (database == null) return NotFound();
+
+            string sql = database.Type.ToLower() switch
+            {
+                "mysql" => $"SELECT TABLE_NAME FROM information_schema.VIEWS WHERE TABLE_SCHEMA = '{EscapeSql(databaseName)}' ORDER BY TABLE_NAME",
+                "postgresql" => "SELECT table_name FROM information_schema.views WHERE table_schema NOT IN ('pg_catalog','information_schema') ORDER BY table_schema, table_name",
+                "sqlserver" => "SELECT name FROM sys.views ORDER BY name",
+                _ => throw new NotSupportedException($"不支持的数据库类型: {database.Type}")
+            };
+
+            var items = await ExecuteStringListQuery(database, sql, databaseName);
+            return Json(new { success = true, items = items });
+        }
+        catch (Exception ex)
+        {
+            return Json(new { success = false, error = ex.Message });
+        }
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> GetFunctions(int id, string databaseName)
+    {
+        try
+        {
+            var database = await _context.Databases.FindAsync(id);
+            if (database == null) return NotFound();
+
+            string sql = database.Type.ToLower() switch
+            {
+                "mysql" => $"SELECT ROUTINE_NAME FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = '{EscapeSql(databaseName)}' ORDER BY ROUTINE_NAME",
+                "postgresql" => "SELECT routine_name FROM information_schema.routines WHERE routine_schema NOT IN ('pg_catalog','information_schema') ORDER BY routine_name",
+                "sqlserver" => "SELECT name FROM sys.objects WHERE type IN ('FN','IF','TF','FS','FT') ORDER BY name",
+                _ => throw new NotSupportedException($"不支持的数据库类型: {database.Type}")
+            };
+
+            var items = await ExecuteStringListQuery(database, sql, databaseName);
+            return Json(new { success = true, items = items });
+        }
+        catch (Exception ex)
+        {
+            return Json(new { success = false, error = ex.Message });
+        }
+    }
+
+    private static string EscapeSql(string value) => (value ?? "").Replace("'", "''");
+
+    private async Task<List<string>> ExecuteStringListQuery(Database database, string sql, string databaseName = null)
+    {
+        var items = new List<string>();
+
+        switch (database.Type.ToLower())
+        {
+            case "mysql":
+                using (var conn = new MySql.Data.MySqlClient.MySqlConnection(
+                    $"server={database.Host};port={database.Port};user={database.Username};password={database.Password};database={databaseName ?? "mysql"}"))
+                {
+                    await conn.OpenAsync();
+                    using var cmd = new MySql.Data.MySqlClient.MySqlCommand(sql, conn);
+                    using var reader = await cmd.ExecuteReaderAsync();
+                    while (await reader.ReadAsync())
+                        items.Add(reader.IsDBNull(0) ? "" : reader.GetValue(0)?.ToString() ?? "");
+                }
+                break;
+
+            case "postgresql":
+                using (var conn = new Npgsql.NpgsqlConnection(
+                    $"Host={database.Host};Port={database.Port};Username={database.Username};Password={database.Password};Database={databaseName ?? "postgres"};SSL Mode=Disable"))
+                {
+                    await conn.OpenAsync();
+                    using var cmd = new Npgsql.NpgsqlCommand(sql, conn);
+                    using var reader = await cmd.ExecuteReaderAsync();
+                    while (await reader.ReadAsync())
+                        items.Add(reader.IsDBNull(0) ? "" : reader.GetValue(0)?.ToString() ?? "");
+                }
+                break;
+
+            case "sqlserver":
+                using (var conn = new System.Data.SqlClient.SqlConnection(
+                    $"Server={database.Host},{database.Port};User ID={database.Username};Password={database.Password};Integrated Security=False;TrustServerCertificate=True;Database={databaseName ?? "master"}"))
+                {
+                    await conn.OpenAsync();
+                    using var cmd = new System.Data.SqlClient.SqlCommand(sql, conn);
+                    using var reader = await cmd.ExecuteReaderAsync();
+                    while (await reader.ReadAsync())
+                        items.Add(reader.IsDBNull(0) ? "" : reader.GetValue(0)?.ToString() ?? "");
+                }
+                break;
+
+            default:
+                throw new NotSupportedException($"不支持的数据库类型: {database.Type}");
+        }
+
+        return items;
+    }
+
 
 
     // Saved Queries API
@@ -323,7 +487,7 @@ namespace EZPannel.Api.Controllers
             try
             {
                 Console.WriteLine($"开始执行SQL查询，数据库类型: {database.Type}");
-                var result = await ExecuteSqlQuery(database, request.Sql);
+                var result = await ExecuteSqlQuery(database, request.Sql, request.DatabaseName);
                 Console.WriteLine($"SQL查询执行成功，结果行数: {result.Rows.Count}");
                 return Json(new { success = true, result = result });
             }
@@ -338,7 +502,7 @@ namespace EZPannel.Api.Controllers
   
         // }
         // Helper methods for database operations
-        private async Task<SqlExecutionResult> ExecuteSqlQuery(Database database, string sql)
+        private async Task<SqlExecutionResult> ExecuteSqlQuery(Database database, string sql, string databaseName = null)
         {
             var result = new SqlExecutionResult();
             var startTime = DateTime.Now;
@@ -357,13 +521,13 @@ namespace EZPannel.Api.Controllers
                 switch (database.Type.ToLower())
                 {
                     case "mysql":
-                        await ExecuteMySqlQuery(database, sql, result);
+                        await ExecuteMySqlQuery(database, sql, databaseName, result);
                         break;
                     case "postgresql":
-                        await ExecutePostgreSqlQuery(database, sql, result);
+                        await ExecutePostgreSqlQuery(database, sql, databaseName, result);
                         break;
                     case "sqlserver":
-                        await ExecuteSqlServerQuery(database, sql, result);
+                        await ExecuteSqlServerQuery(database, sql, databaseName, result);
                         break;
                     default:
                         throw new NotSupportedException($"不支持的数据库类型: {database.Type}");
@@ -377,10 +541,10 @@ namespace EZPannel.Api.Controllers
             return result;
         }
 
-        private async Task ExecuteMySqlQuery(Database database, string sql, SqlExecutionResult result)
+        private async Task ExecuteMySqlQuery(Database database, string sql, string databaseName, SqlExecutionResult result)
         {
             using (var connection = new MySql.Data.MySqlClient.MySqlConnection(
-                $"server={database.Host};port={database.Port};user={database.Username};password={database.Password};database=mysql"))
+                $"server={database.Host};port={database.Port};user={database.Username};password={database.Password};database={databaseName ?? "mysql"}"))
             {
                 await connection.OpenAsync();
 
@@ -416,10 +580,10 @@ namespace EZPannel.Api.Controllers
             }
         }
 
-        private async Task ExecutePostgreSqlQuery(Database database, string sql, SqlExecutionResult result)
+        private async Task ExecutePostgreSqlQuery(Database database, string sql, string databaseName, SqlExecutionResult result)
         {
             using (var connection = new Npgsql.NpgsqlConnection(
-                $"Host={database.Host};Port={database.Port};Username={database.Username};Password={database.Password};Database=postgres;SSL Mode=Disable"))
+                $"Host={database.Host};Port={database.Port};Username={database.Username};Password={database.Password};Database={databaseName ?? "postgres"};SSL Mode=Disable"))
             {
                 await connection.OpenAsync();
 
@@ -455,10 +619,10 @@ namespace EZPannel.Api.Controllers
             }
         }
 
-        private async Task ExecuteSqlServerQuery(Database database, string sql, SqlExecutionResult result)
+        private async Task ExecuteSqlServerQuery(Database database, string sql, string databaseName, SqlExecutionResult result)
         {
             using (var connection = new System.Data.SqlClient.SqlConnection(
-                $"Server={database.Host},{database.Port};User ID={database.Username};Password={database.Password};Integrated Security=False;TrustServerCertificate=True;Database=master"))
+                $"Server={database.Host},{database.Port};User ID={database.Username};Password={database.Password};Integrated Security=False;TrustServerCertificate=True;Database={databaseName ?? "master"}"))
             {
                 await connection.OpenAsync();
 
@@ -505,35 +669,72 @@ namespace EZPannel.Api.Controllers
         }
 
         // Restore Management
-        public async Task<IActionResult> Restore(int page = 1, int pageSize = 10)
+        public async Task<IActionResult> Restore(int page = 1, int pageSize = 10, string? configName = null, DateTime? startDate = null, DateTime? endDate = null)
         {
             ViewData["ActiveMenu"] = "database_restore";
+            if (page < 1) page = 1;
+            if (pageSize < 1) pageSize = 10;
+
+            var query = from a in _context.BackupLogs
+                        join b in _context.DatabaseBackupConfigs on a.DatabaseBackupConfigId equals b.Id
+                        select new BackupLog
+                        {
+                            Id = a.Id,
+                            DatabaseBackupConfigId = a.DatabaseBackupConfigId,
+                            DatabaseName = a.DatabaseName,
+                            BackupTime = a.BackupTime,
+                            IsSuccess = a.IsSuccess,
+                            Message = a.Message,
+                            FilePath = a.FilePath,
+                            FileSize = a.FileSize,
+                            DatabaseConfigName = b.Name
+                        };
+
+            // 按配置名称过滤
+            if (!string.IsNullOrWhiteSpace(configName))
+            {
+                query = query.Where(l => l.DatabaseConfigName == configName);
+            }
+            // 按备份时间区间过滤（结束日期含当天）
+            if (startDate.HasValue)
+            {
+                var start = startDate.Value.Date;
+                query = query.Where(l => l.BackupTime >= start);
+            }
+            if (endDate.HasValue)
+            {
+                var endExclusive = endDate.Value.Date.AddDays(1);
+                query = query.Where(l => l.BackupTime < endExclusive);
+            }
+
             // 计算总记录数
-            var totalLogs = await _context.BackupLogs
-                .Where(l => _context.DatabaseBackupConfigs.Any(c => c.Id == l.DatabaseBackupConfigId ))
-                .CountAsync();
+            var totalLogs = await query.CountAsync();
 
             // 分页查询
-            var model = from a in _context.BackupLogs join b in _context.DatabaseBackupConfigs on a.DatabaseBackupConfigId equals b.Id
-                select new BackupLog
-                {
-                    Id = a.Id,
-                    DatabaseBackupConfigId = a.DatabaseBackupConfigId,
-                    DatabaseName = a.DatabaseName,
-                    BackupTime = a.BackupTime,
-                    IsSuccess = a.IsSuccess,
-                    Message = a.Message,
-                    FilePath = a.FilePath,
-                    FileSize = a.FileSize,
-                    DatabaseConfigName = b.Name
-                };
-           var backupLogs =await model.OrderByDescending(l => l.BackupTime).Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
+            var backupLogs = await query
+                .OrderByDescending(l => l.BackupTime)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+
             // 计算总页数
             var totalPages = (int)Math.Ceiling(totalLogs / (double)pageSize);
             ViewBag.Page = page;
             ViewBag.PageSize = pageSize;
             ViewBag.TotalPages = totalPages;
             ViewBag.TotalLogs = totalLogs;
+
+            // 下拉选项与回显值
+            ViewBag.ConfigNames = await _context.DatabaseBackupConfigs
+                .Where(c => c.Name != null && c.Name != "")
+                .Select(c => c.Name)
+                .Distinct()
+                .OrderBy(n => n)
+                .ToListAsync();
+            ViewBag.ConfigName = configName;
+            ViewBag.StartDate = startDate?.ToString("yyyy-MM-dd");
+            ViewBag.EndDate = endDate?.ToString("yyyy-MM-dd");
+
             return View(backupLogs);
         }
 
@@ -547,7 +748,11 @@ namespace EZPannel.Api.Controllers
                     name = c.Name,
                     databaseId = c.DatabaseId,
                     databaseNames = c.DatabaseNames,
-                    cronExpression = c.CronExpression,
+                    scheduleType = c.ScheduleType,
+                    runTime = c.RunTime,
+                    dayOfMonth = c.DayOfMonth,
+                    month = c.Month,
+                    runDate = c.RunDate,
                     isEnabled = c.IsEnabled
                 })
                 .FirstOrDefaultAsync();

@@ -1,0 +1,319 @@
+@model EZPannel.Api.Models.Database
+@{
+    ViewData["Title"] = "数据库详情";
+}
+
+<style>
+    .db-detail-sidebar .card-body {
+        padding: 10px;
+    }
+    .db-section-title {
+        font-size: 12px;
+        font-weight: bold;
+        color: #909399;
+        text-transform: uppercase;
+        padding: 8px 10px 4px;
+        border-bottom: 1px solid #f0f2f5;
+        margin-top: 6px;
+    }
+    .db-section-title:first-child {
+        margin-top: 0;
+    }
+    .db-list {
+        max-height: 180px;
+        overflow-y: auto;
+    }
+    .db-list .db-item {
+        display: block;
+        padding: 6px 10px;
+        font-size: 14px;
+        color: #606266;
+        text-decoration: none;
+        border-radius: 4px;
+        cursor: pointer;
+        word-break: break-all;
+    }
+    .db-list .db-item:hover {
+        background-color: #f5f7fa;
+        color: var(--primary-color);
+    }
+    .db-list .db-item.active {
+        background-color: #ecfdf5;
+        color: var(--primary-color);
+    }
+    .db-empty {
+        color: #c0c4cc;
+        font-size: 13px;
+        padding: 6px 10px;
+    }
+    .query-editor {
+        font-family: 'Courier New', Courier, monospace;
+        font-size: 13px;
+        line-height: 1.5;
+    }
+    #resultTable th {
+        white-space: nowrap;
+        font-size: 13px;
+    }
+    #resultTable td {
+        font-size: 13px;
+        max-width: 200px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+</style>
+
+<div class="container-fluid p-3">
+    <!-- 连接信息 -->
+    <div class="card mb-3">
+        <div class="card-body d-flex flex-wrap justify-content-between align-items-center py-3">
+            <div>
+                <h5 class="mb-1">
+                    <i class="bi bi-database me-2 text-primary"></i>@Model.Name
+                    <span class="badge bg-secondary ms-2">@Model.Type</span>
+                </h5>
+                <div class="text-muted small">
+                    <i class="bi bi-hdd-network me-1"></i>@Model.Host:@Model.Port
+                    <span class="mx-2">·</span>
+                    <i class="bi bi-person me-1"></i>@Model.Username
+                    @if (!string.IsNullOrEmpty(Model.Description))
+                    {
+                        <span class="mx-2">·</span>
+                        <i class="bi bi-info-circle me-1"></i>@Model.Description
+                    }
+                </div>
+            </div>
+            <div>
+                <a asp-action="Index" class="btn btn-sm btn-secondary">
+                    <i class="bi bi-arrow-left me-1"></i>返回列表
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- 左侧对象树 -->
+        <div class="col-md-3">
+            <div class="card db-detail-sidebar">
+                <div class="card-header">
+                    <i class="bi bi-diagram-3 me-1"></i>数据库对象
+                </div>
+                <div class="card-body">
+                    <div class="db-section-title">数据库</div>
+                    <div id="dbList" class="db-list"><div class="db-empty">加载中...</div></div>
+
+                    <div class="db-section-title">表</div>
+                    <div id="tableList" class="db-list"><div class="db-empty">请先选择数据库</div></div>
+
+                    <div class="db-section-title">视图</div>
+                    <div id="viewList" class="db-list"><div class="db-empty">请先选择数据库</div></div>
+
+                    <div class="db-section-title">函数</div>
+                    <div id="functionList" class="db-list"><div class="db-empty">请先选择数据库</div></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧查询 -->
+        <div class="col-md-9">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-terminal me-1"></i>查询</span>
+                    <span id="currentDbBadge" class="badge bg-secondary">未选择数据库</span>
+                </div>
+                <div class="card-body">
+                    <textarea id="sqlEditor" class="form-control query-editor" rows="6"
+                              placeholder="在此输入 SQL 查询语句...&#10;例如: SELECT * FROM users;"></textarea>
+                    <div class="mt-2 d-flex gap-2">
+                        <button id="runQueryBtn" class="btn btn-primary btn-sm">
+                            <i class="bi bi-play me-1"></i>执行
+                        </button>
+                        <button id="clearQueryBtn" class="btn btn-secondary btn-sm">
+                            <i class="bi bi-trash me-1"></i>清空
+                        </button>
+                    </div>
+
+                    <div id="queryError" class="alert alert-danger mt-3" style="display:none;"></div>
+                    <div id="querySuccess" class="alert alert-success mt-3" style="display:none;"></div>
+
+                    <div id="queryMeta" class="text-muted small mt-3" style="display:none;"></div>
+                    <div class="table-responsive">
+                        <table id="resultTable" class="table table-bordered table-hover mb-0" style="display:none;">
+                            <thead id="resultHead"></thead>
+                            <tbody id="resultBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    var dbId = @Model.Id;
+    var selectedDatabase = null;
+
+    function showError(msg) {
+        $('#querySuccess').hide();
+        $('#queryError').text(msg).show();
+    }
+
+    function showSuccess(msg) {
+        $('#queryError').hide();
+        $('#querySuccess').text(msg).show();
+    }
+
+    function clearResults() {
+        $('#queryError').hide();
+        $('#querySuccess').hide();
+        $('#queryMeta').hide();
+        $('#resultTable').hide();
+        $('#resultHead').empty();
+        $('#resultBody').empty();
+    }
+
+    function renderList(containerId, res, emptyText) {
+        var $list = $(containerId).empty();
+        if (!res.success) {
+            $list.html('<div class="db-empty text-danger">' + (res.error || '加载失败') + '</div>');
+            return;
+        }
+        if (!res.items || !res.items.length) {
+            $list.html('<div class="db-empty">' + emptyText + '</div>');
+            return;
+        }
+        res.items.forEach(function (name) {
+            $('<a>').addClass('db-item').attr('href', 'javascript:;').text(name)
+                .appendTo($list);
+        });
+    }
+
+    function loadDatabases() {
+        $.get('/Database/GetDatabases?id=' + dbId, function (res) {
+            renderList('#dbList', res, '无');
+            $('#dbList .db-item').on('click', function () {
+                selectDatabase($(this).text());
+            });
+        }).fail(function () {
+            $('#dbList').html('<div class="db-empty text-danger">加载失败</div>');
+        });
+    }
+
+    function selectDatabase(name) {
+        selectedDatabase = name;
+        $('#currentDbBadge').text(name).removeClass('bg-secondary').addClass('bg-primary');
+        $('#dbList .db-item').removeClass('active');
+        $('#dbList .db-item').each(function () {
+            if ($(this).text() === name) $(this).addClass('active');
+        });
+        loadTables();
+        loadViews();
+        loadFunctions();
+    }
+
+    function loadTables() {
+        $('#tableList').html('<div class="db-empty">加载中...</div>');
+        $.get('/Database/GetTables?id=' + dbId + '&databaseName=' + encodeURIComponent(selectedDatabase), function (res) {
+            renderList('#tableList', res, '无表');
+        }).fail(function () {
+            $('#tableList').html('<div class="db-empty text-danger">加载失败</div>');
+        });
+    }
+
+    function loadViews() {
+        $('#viewList').html('<div class="db-empty">加载中...</div>');
+        $.get('/Database/GetViews?id=' + dbId + '&databaseName=' + encodeURIComponent(selectedDatabase), function (res) {
+            renderList('#viewList', res, '无视图');
+        }).fail(function () {
+            $('#viewList').html('<div class="db-empty text-danger">加载失败</div>');
+        });
+    }
+
+    function loadFunctions() {
+        $('#functionList').html('<div class="db-empty">加载中...</div>');
+        $.get('/Database/GetFunctions?id=' + dbId + '&databaseName=' + encodeURIComponent(selectedDatabase), function (res) {
+            renderList('#functionList', res, '无函数');
+        }).fail(function () {
+            $('#functionList').html('<div class="db-empty text-danger">加载失败</div>');
+        });
+    }
+
+    function runQuery() {
+        var sql = $('#sqlEditor').val().trim();
+        if (!sql) {
+            showError('请输入 SQL 查询语句');
+            return;
+        }
+
+        clearResults();
+        var $btn = $('#runQueryBtn').prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-1"></span>执行中...');
+
+        $.ajax({
+            url: '/Database/ExecuteSql?id=' + dbId,
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({ Sql: sql, DatabaseName: selectedDatabase }),
+            success: function (res) {
+                $btn.prop('disabled', false).html('<i class="bi bi-play me-1"></i>执行');
+                if (res.success) {
+                    renderResult(res.result);
+                } else {
+                    showError(res.error || '执行失败');
+                }
+            },
+            error: function (xhr) {
+                $btn.prop('disabled', false).html('<i class="bi bi-play me-1"></i>执行');
+                showError('请求失败: ' + xhr.status);
+            }
+        });
+    }
+
+    function renderResult(result) {
+        if (result.isQuery) {
+            var columns = result.columns || [];
+            var rows = result.rows || [];
+
+            var $head = $('#resultHead').empty();
+            var $headRow = $('<tr>');
+            columns.forEach(function (c) { $headRow.append($('<th>').text(c)); });
+            $head.append($headRow);
+
+            var $body = $('#resultBody').empty();
+            if (!rows.length) {
+                showSuccess('查询返回 0 行结果');
+                return;
+            }
+            rows.forEach(function (row) {
+                var $tr = $('<tr>');
+                (row || []).forEach(function (cell) {
+                    $tr.append($('<td>').text(cell !== null && cell !== undefined ? cell.toString() : 'NULL'));
+                });
+                $body.append($tr);
+            });
+
+            $('#queryMeta').text('共 ' + rows.length + ' 行').show();
+            $('#resultTable').show();
+        } else {
+            showSuccess('操作成功完成，影响了 ' + (result.affectedRows || 0) + ' 行');
+        }
+    }
+
+    $(function () {
+        loadDatabases();
+
+        $('#runQueryBtn').on('click', runQuery);
+        $('#clearQueryBtn').on('click', function () {
+            $('#sqlEditor').val('');
+            clearResults();
+            $('#sqlEditor').focus();
+        });
+
+        $('#sqlEditor').on('keydown', function (e) {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                e.preventDefault();
+                runQuery();
+            }
+        });
+    });
+</script>

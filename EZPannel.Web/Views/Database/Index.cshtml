@@ -50,7 +50,7 @@
                                 {
                                     <tr>
                                         <td>
-                                            <a href="#" class="database-link" data-id="@item.Id" data-name="@item.Name">
+                                            <a asp-action="Detail" asp-route-id="@item.Id" class="database-link">
                                                 @item.Name
                                             </a>
                                         </td>
@@ -323,16 +323,5 @@
             }
         });
 
-        // 数据库链接点击事件 - 直接打开SQL终端
-        document.querySelectorAll('.database-link').forEach(link => {
-            link.addEventListener('click', function(e) {
-                e.preventDefault();
-                
-                const id = this.getAttribute('data-id');
-                
-                // 直接打开SQL终端
-                openSqlTerminal(id);
-            });
-        });
     });
 </script>

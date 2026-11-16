@@ -1,0 +1,40 @@
+# ---- .NET 编译产物 ----
+bin/
+obj/
+*.user
+*.suo
+*.lscache
+*.lscache.stamp
+*.sourcelink.json
+*.staticwebassets.*.json
+*.deps.json
+*.runtimeconfig.json
+*.pdb
+*.dll
+*.exe
+
+# ---- 面板运行时数据（含用户凭据与服务器 Key，禁止入库）----
+*.db
+*.db-shm
+*.db-wal
+EZPannel.Web/logs/
+EZPannel.Web/Backups/
+
+# ---- Python ----
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# ---- 编辑器 / 系统 ----
+.vs/
+.idea/
+.DS_Store
+Thumbs.db
+
+# ---- 临时与调试文件 ----
+$null
+*~
+*.tmp
+*.log

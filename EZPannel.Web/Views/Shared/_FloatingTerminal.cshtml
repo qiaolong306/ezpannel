@@ -61,6 +61,71 @@
     let floatingScriptSents = {};
     let currentFloatingServerId = null;
 
+    // 把文本写入系统剪贴板。
+    // 面板通常用 http://内网IP 访问，非安全上下文下 navigator.clipboard 不可用，
+    // 因此必须保留 execCommand 这条回退路径。
+    function ezpCopyText(text) {
+        if (!text) {
+            return;
+        }
+        if (window.isSecureContext && navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).catch(function () {
+                ezpCopyTextFallback(text);
+            });
+            return;
+        }
+        ezpCopyTextFallback(text);
+    }
+
+    function ezpCopyTextFallback(text) {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.top = '-1000px';
+        ta.style.left = '-1000px';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        ta.setSelectionRange(0, text.length);
+        try {
+            document.execCommand('copy');
+        } catch (e) { }
+        document.body.removeChild(ta);
+        // 复制后把焦点还给终端，否则后续按键会落到临时 textarea 上
+        const term = currentFloatingServerId ? floatingTerminals[currentFloatingServerId] : null;
+        if (term) {
+            term.focus();
+        }
+    }
+
+    // 完整释放某台服务器的终端会话：断开 SignalR 连接（Agent 侧随之关闭 shell）+ 销毁 xterm 实例
+    function closeFloatingTerminal(serverId) {
+        const conn = floatingConnections[serverId];
+        if (conn) {
+            delete floatingConnections[serverId];
+            try { conn.stop().catch(() => { }); } catch (e) { }
+        }
+        const term = floatingTerminals[serverId];
+        if (term) {
+            delete floatingTerminals[serverId];
+            try { term.dispose(); } catch (e) { }
+        }
+        delete floatingFitAddons[serverId];
+        delete floatingScriptContents[serverId];
+        delete floatingScriptSents[serverId];
+    }
+
+    // 浮动终端全局只有一份，打开新会话前必须把旧会话全部释放，否则 Agent 侧会残留 shell 进程
+    function closeAllFloatingTerminals() {
+        Object.keys(floatingConnections).forEach(closeFloatingTerminal);
+        Object.keys(floatingTerminals).forEach(closeFloatingTerminal);
+    }
+
+    // 页面关闭 / 刷新时兜底释放，避免留下僵尸会话
+    window.addEventListener('pagehide', closeAllFloatingTerminals);
+
     function openFloatingTerminal(serverId, serverName, scriptId = null) {
         console.log('Opening floating terminal for server:', serverId, "serverName:", serverName, "scriptId:", scriptId);
         // Validate inputs
@@ -70,10 +135,8 @@
             return;
         }
 
-        // Close any existing connection for this server first
-        if (floatingConnections[serverId] && floatingConnections[serverId].state === 'Connected') {
-            floatingConnections[serverId].stop();
-        }
+        // 释放所有旧会话（包括正在连接中的、以及为其它服务器打开的）
+        closeAllFloatingTerminals();
 
         // Initialize terminal states for this server
         floatingScriptContents[serverId] = null;
@@ -84,24 +147,72 @@
 
         document.getElementById('floatingTerminalServerName').textContent = serverName || 'Loading...';
 
-        const modal = new bootstrap.Modal(document.getElementById('floatingTerminalModal'));
-
-        // Track modal state
         const modalElement = document.getElementById('floatingTerminalModal');
+        // focus: false 禁止 Bootstrap 打开模态框时自动抢焦点（它会聚焦到 modal 自身），
+        // 否则终端的输入焦点会被夺走，用户必须手动点一下才能打字。
+        const modal = bootstrap.Modal.getOrCreateInstance(modalElement, { focus: false });
 
-        modalElement.addEventListener('hidden.bs.modal', function () {
-            // Clean up connection when modal is closed
-            if (floatingConnections[currentFloatingServerId]) {
-                floatingConnections[currentFloatingServerId].stop();
-            }
-        });
+        // 事件监听只注册一次，避免反复打开终端时重复绑定
+        if (!modalElement.dataset.ezpannelBound) {
+            modalElement.dataset.ezpannelBound = '1';
+            // 必须等动画结束、布局尺寸确定后再创建终端：
+            // 否则 fit() 量到的行列偏小，伪终端按错误尺寸初始化，
+            // 之后的行列不一致会让 ConPTY 的定位序列落到别的行，输入就会“飘”到上面。
+            modalElement.addEventListener('shown.bs.modal', function () {
+                const sid = currentFloatingServerId;
+                if (!sid) {
+                    return;
+                }
+                initFloatingTerminal(sid);
+                focusFloatingTerminal(sid);
+            });
+            modalElement.addEventListener('hidden.bs.modal', function () {
+                // 关闭弹窗即释放会话，让 Agent 结束对应的 shell 进程
+                closeFloatingTerminal(currentFloatingServerId);
+            });
+        }
+        // 弹窗本来就开着时 Bootstrap 不会再触发 shown，需要立即重建终端
+        const alreadyOpen = modalElement.classList.contains('show');
         modal.show();
-        // Initialize terminal after modal is shown
-        setTimeout(() => initFloatingTerminal(serverId), 100);
+        if (alreadyOpen) {
+            initFloatingTerminal(serverId);
+            focusFloatingTerminal(serverId);
+        }
         // If there's a script to run, load it
         if (scriptId) {
             setTimeout(() => loadScriptForExecution(serverId, scriptId), 1000);
         }
+    }
+
+    // 把键盘焦点交给当前终端，并重新适配一次尺寸
+    function focusFloatingTerminal(serverId = currentFloatingServerId) {
+        const term = serverId ? floatingTerminals[serverId] : null;
+        if (!term) {
+            return;
+        }
+        const attempt = () => {
+            const fit = floatingFitAddons[serverId];
+            // 只在容器尺寸真的变了才重新 fit：已经有输出后再 resize，
+            // ConPTY 会整屏重绘，光标位置就会和屏幕内容错位
+            if (fit && typeof fit.proposeDimensions === 'function') {
+                try {
+                    const dims = fit.proposeDimensions();
+                    if (dims && (dims.cols !== term.cols || dims.rows !== term.rows)) {
+                        fit.fit();
+                    }
+                } catch (e) { }
+            }
+            term.focus();
+        };
+        // 延后一帧，等 Bootstrap 的焦点处理与布局计算完成
+        requestAnimationFrame(attempt);
+        // 模态框的过渡动画结束后 Bootstrap 可能再次抢占焦点，这里校验并补抢一次
+        setTimeout(() => {
+            const active = document.activeElement;
+            if (!active || !active.closest('.xterm')) {
+                attempt();
+            }
+        }, 300);
     }
 
     function loadScriptForExecution(serverId, scriptId) {
@@ -268,13 +379,40 @@
             console.error('Terminal container not found');
             return;
         }
+
+        // 释放上一次的终端实例与会话，避免残留实例抢焦点、重复回显或 Agent 侧多开 shell
+        closeFloatingTerminal(serverId);
         container.innerHTML = ''; // Clear
 
         floatingTerminals[serverId] = new Terminal({
             cursorBlink: true,
             fontSize: 14,
             fontFamily: 'Menlo, Monaco, "Courier New", monospace',
-            theme: { background: '#000' }
+            scrollback: 5000,
+            drawBoldTextInBrightColors: true,
+            theme: {
+                background: '#0d1117',
+                foreground: '#e6edf3',
+                cursor: '#34d399',
+                cursorAccent: '#0d1117',
+                selectionBackground: 'rgba(16, 185, 129, 0.35)',
+                black: '#1f2937',
+                red: '#f87171',
+                green: '#34d399',
+                yellow: '#fbbf24',
+                blue: '#60a5fa',
+                magenta: '#c084fc',
+                cyan: '#22d3ee',
+                white: '#e6edf3',
+                brightBlack: '#7d8590',
+                brightRed: '#fca5a5',
+                brightGreen: '#6ee7b7',
+                brightYellow: '#fde68a',
+                brightBlue: '#93c5fd',
+                brightMagenta: '#d8b4fe',
+                brightCyan: '#67e8f9',
+                brightWhite: '#ffffff'
+            }
         });
 
         floatingFitAddons[serverId] = new window.FitAddon.FitAddon();
@@ -282,45 +420,78 @@
         floatingTerminals[serverId].open(container);
         floatingFitAddons[serverId].fit();
 
-        floatingConnections[serverId] = new signalR.HubConnectionBuilder()
+        // xterm 默认把 Ctrl+C 当作按键发给远端（0x03 → SIGINT），选中文字后按 Ctrl+C 会变成中断。
+        // 这里改写语义：有选中内容时复制到剪贴板且不再下发按键；没有选中时保持中断行为。
+        floatingTerminals[serverId].attachCustomKeyEventHandler(function (e) {
+            if (e.type !== 'keydown') {
+                return true;
+            }
+            if (!(e.ctrlKey || e.metaKey) || e.altKey) {
+                return true;
+            }
+            if (e.code !== 'KeyC' && e.key !== 'c' && e.key !== 'C') {
+                return true;
+            }
+            const term = floatingTerminals[serverId];
+            const selected = term ? term.getSelection() : '';
+            if (!selected) {
+                return true;
+            }
+            ezpCopyText(selected);
+            return false;
+        });
+
+        // 终端布局还没算完时 fit() 可能得到 0 行/列，兜底用默认值，避免伪终端尺寸畸形
+        const initCols = floatingTerminals[serverId].cols || 120;
+        const initRows = floatingTerminals[serverId].rows || 30;
+
+        const conn = new signalR.HubConnectionBuilder()
             .withUrl("/terminalHub?access_token=" + (localStorage.getItem('token') || ""))
             .withAutomaticReconnect()
             .build();
+        floatingConnections[serverId] = conn;
 
-        floatingConnections[serverId].on("ReceiveData", data => {
+        conn.on("ReceiveData", data => {
             if (floatingTerminals[serverId]) {
                 floatingTerminals[serverId].write(data);
             }
         });
 
         floatingTerminals[serverId].onData(data => {
-            if (floatingConnections[serverId] && floatingConnections[serverId].state === "Connected") {
-                floatingConnections[serverId].send("SendData", data);
+            if (conn.state === "Connected") {
+                conn.send("SendData", data);
             }
         });
 
-        floatingConnections[serverId].start().then(() => {
-            console.log('Terminal connection established for server:', serverId);
-            if (floatingConnections[serverId]) {
-                floatingConnections[serverId].send("Connect", serverId);
-                if (floatingTerminals[serverId]) {
-                    floatingTerminals[serverId].focus();
+        // 终端尺寸变化时同步给 Agent 的伪终端，避免换行/光标位置错乱
+        floatingTerminals[serverId].onResize((cols, rows) => {
+            if (conn.state === "Connected") {
+                conn.send("Resize", cols, rows);
+            }
+        });
 
-                    // Check if we have an uploaded script to run for this server
-                    if (floatingScriptContents[serverId]) {
-                        console.log('Executing uploaded script...');
-                        // Add slight delay to ensure terminal is fully ready
-                        setTimeout(() => {
-                            // Get the script type (we need to store this separately)
-                            // For now, we'll assume the scriptType is stored with the server
-                            if (typeof serverScriptTypes === 'undefined') {
-                                window.serverScriptTypes = {};
-                            }
-                            const scriptType = serverScriptTypes[serverId] || 'sh';
-                            executeUploadedScript(serverId, floatingScriptContents[serverId], scriptType);
-                        }, 300);
+        conn.start().then(() => {
+            console.log('Terminal connection established for server:', serverId);
+            // 连接建立期间用户可能已经关闭/重开了终端，此时丢弃这次回调，避免重复开 shell
+            if (floatingConnections[serverId] !== conn || !floatingTerminals[serverId]) {
+                return;
+            }
+            conn.send("Connect", serverId, initCols, initRows);
+            focusFloatingTerminal(serverId);
+
+            // Check if we have an uploaded script to run for this server
+            if (floatingScriptContents[serverId]) {
+                console.log('Executing uploaded script...');
+                // Add slight delay to ensure terminal is fully ready
+                setTimeout(() => {
+                    // Get the script type (we need to store this separately)
+                    // For now, we'll assume the scriptType is stored with the server
+                    if (typeof serverScriptTypes === 'undefined') {
+                        window.serverScriptTypes = {};
                     }
-                }
+                    const scriptType = serverScriptTypes[serverId] || 'sh';
+                    executeUploadedScript(serverId, floatingScriptContents[serverId], scriptType);
+                }, 300);
             }
         }).catch(err => {
             console.error('Failed to connect to terminal:', err);
@@ -328,11 +499,23 @@
                 floatingTerminals[serverId].write("\r\n\x1b[31m连接失败: " + err.message + "\x1b[0m\r\n");
             }
         });
-
-        window.addEventListener('resize', () => {
-            if (floatingFitAddons[serverId]) {
-                floatingFitAddons[serverId].fit();
-            }
-        });
     }
+
+    // 窗口尺寸变化时统一重新适配：监听只注册一次，
+    // 否则反复打开终端会累积回调，一次窗口变化触发多次 fit → 多次 resize → ConPTY 整屏重绘导致内容错乱
+    window.addEventListener('resize', () => {
+        Object.keys(floatingFitAddons).forEach(sid => {
+            const fit = floatingFitAddons[sid];
+            const term = floatingTerminals[sid];
+            if (!fit || !term) {
+                return;
+            }
+            try {
+                const dims = fit.proposeDimensions();
+                if (dims && (dims.cols !== term.cols || dims.rows !== term.rows)) {
+                    fit.fit();
+                }
+            } catch (e) { }
+        });
+    });
 </script>

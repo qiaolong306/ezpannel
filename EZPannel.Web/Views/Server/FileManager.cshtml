@@ -283,10 +283,12 @@ string os = ViewData["ServerVersion"] as string;
                 const fileName = file.name || '未知名称';
                 
                 if (isDir) {
-                    icon.className = 'bi bi-folder text-warning me-2';
+                    icon.className = 'bi bi-folder-fill text-warning me-2';
                     const link = document.createElement('a');
                     link.href = '#';
                     link.className = 'text-decoration-none';
+                    // 全局 a 标签被统一设成主题绿，这里覆盖成正文色
+                    link.style.color = 'var(--text-primary)';
                     link.textContent = fileName;
                     link.addEventListener('click', function(e) {
                         e.preventDefault();
@@ -329,11 +331,11 @@ string os = ViewData["ServerVersion"] as string;
                 const btnGroup = document.createElement('div');
                 btnGroup.className = 'btn-group btn-group-sm';
                 
-                if (file.IsDirectory) {
+                if (file.isDirectory) {
                     // 文件夹操作
                     const openBtn = document.createElement('button');
                     openBtn.className = 'btn btn-outline-secondary';
-                    openBtn.innerHTML = '<i class="bi bi-folder-open"></i>';
+                    openBtn.innerHTML = '<i class="bi bi-folder-fill"></i>';
                     openBtn.title = '打开文件夹';
                     openBtn.addEventListener('click', function() {
                         loadFiles(file.path);
@@ -644,7 +646,7 @@ string os = ViewData["ServerVersion"] as string;
                 const path = checkbox.value;
                 // 从文件列表中查找该文件/文件夹的信息
                 const row = checkbox.closest('tr');
-                const isDirectory = row.querySelector('.bi-folder') !== null;
+                const isDirectory = row.querySelector('.bi-folder-fill') !== null;
                 deleteFile(path, isDirectory);
             });
         }

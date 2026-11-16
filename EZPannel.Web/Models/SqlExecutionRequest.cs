@@ -4,5 +4,6 @@ namespace EZPannel.Api.Models
     {
         public string Sql { get; set; }
         public bool IncludeMetadata { get; set; } = true;
+        public string DatabaseName { get; set; }
     }
 }

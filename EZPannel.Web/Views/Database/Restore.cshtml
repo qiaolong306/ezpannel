@@ -1,10 +1,94 @@
 @using System
+@using System.Collections
 @{    
     ViewData["Title"] = "数据库还原";
     @model List<EZPannel.Api.Models.BackupLog>
+
+    var configNames = ViewBag.ConfigNames as List<string> ?? new List<string>();
+    string curConfigName = ViewBag.ConfigName as string;
+    string curStartDate = ViewBag.StartDate as string;
+    string curEndDate = ViewBag.EndDate as string;
+
+    int curPage = (int)(ViewBag.Page ?? 1);
+    int curPageSize = (int)(ViewBag.PageSize ?? 10);
+    int curTotalPages = (int)(ViewBag.TotalPages ?? 0);
+    int curTotalLogs = (int)(ViewBag.TotalLogs ?? 0);
+
+    // 分页链接保留当前筛选条件
+    object PageRoute(int targetPage) => new
+    {
+        page = targetPage,
+        pageSize = curPageSize,
+        configName = curConfigName,
+        startDate = curStartDate,
+        endDate = curEndDate
+    };
 }
 
 <div class="container-fluid">
+    <!-- 筛选条件 -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card mb-3">
+                <div class="card-body py-3">
+                    <form method="get" action="@Url.Action("Restore")" class="row g-2 align-items-end">
+                        <div class="col-auto">
+                            <label for="configName" class="form-label small mb-1">配置名称</label>
+                            <select class="form-select form-select-sm" id="configName" name="configName" style="min-width: 180px;">
+                                <option value="">全部配置</option>
+                                @foreach (var name in configNames)
+                                {
+                                    if (name == curConfigName)
+                                    {
+                                        <option value="@name" selected>@name</option>
+                                    }
+                                    else
+                                    {
+                                        <option value="@name">@name</option>
+                                    }
+                                }
+                            </select>
+                        </div>
+                        <div class="col-auto">
+                            <label for="startDate" class="form-label small mb-1">开始日期</label>
+                            <input type="date" class="form-control form-control-sm" id="startDate" name="startDate" value="@curStartDate" />
+                        </div>
+                        <div class="col-auto">
+                            <label for="endDate" class="form-label small mb-1">结束日期</label>
+                            <input type="date" class="form-control form-control-sm" id="endDate" name="endDate" value="@curEndDate" />
+                        </div>
+                        <div class="col-auto">
+                            <label for="pageSize" class="form-label small mb-1">每页</label>
+                            <select class="form-select form-select-sm" id="pageSize" name="pageSize">
+                                @foreach (var size in new[] { 10, 20, 50, 100 })
+                                {
+                                    if (size == curPageSize)
+                                    {
+                                        <option value="@size" selected>@size 条</option>
+                                    }
+                                    else
+                                    {
+                                        <option value="@size">@size 条</option>
+                                    }
+                                }
+                            </select>
+                        </div>
+                        <div class="col-auto">
+                            <button type="submit" class="btn btn-sm btn-primary">
+                                <i class="bi bi-search"></i> 查询
+                            </button>
+                        </div>
+                        <div class="col-auto">
+                            <a href="@Url.Action("Restore", new { pageSize = curPageSize })" class="btn btn-sm btn-outline-secondary">
+                                <i class="bi bi-x-circle"></i> 重置
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- 备份日志模块 -->
     <div class="row">
         <div class="col-12">
@@ -80,7 +164,7 @@
                                 else
                                 {
                                     <tr>
-                                        <td colspan="6" class="text-center text-muted">暂无备份日志</td>
+                                        <td colspan="7" class="text-center text-muted">暂无备份日志</td>
                                     </tr>
                                 }
                             </tbody>
@@ -88,36 +172,36 @@
                     </div>
 
                     <!-- 分页控件 -->
-                    @if (ViewBag.TotalPages > 1)
+                    @if (curTotalPages > 1)
                     {
                         <nav aria-label="Page navigation">
                             <ul class="pagination justify-content-center">
-                                <li class="page-item @(ViewBag.Page == 1 ? "disabled" : "")">
-                                    <a class="page-link" href="@Url.Action("Restore", new {page = 1, pageSize = ViewBag.PageSize })" aria-label="First">
+                                <li class="page-item @(curPage == 1 ? "disabled" : "")">
+                                    <a class="page-link" href="@Url.Action("Restore", PageRoute(1))" aria-label="First">
                                         <span aria-hidden="true">&laquo;&laquo;</span>
                                     </a>
                                 </li>
-                                <li class="page-item @(ViewBag.Page == 1 ? "disabled" : "")">
-                                    <a class="page-link" href="@Url.Action("Restore", new {  page = ViewBag.Page - 1, pageSize = ViewBag.PageSize })" aria-label="Previous">
+                                <li class="page-item @(curPage == 1 ? "disabled" : "")">
+                                    <a class="page-link" href="@Url.Action("Restore", PageRoute(curPage - 1))" aria-label="Previous">
                                         <span aria-hidden="true">&laquo;</span>
                                     </a>
                                 </li>
 
-                                @{ int startPage = Math.Max(1, ViewBag.Page - 2); int endPage = Math.Min(ViewBag.TotalPages, ViewBag.Page + 2); }
+                                @{ int startPage = Math.Max(1, curPage - 2); int endPage = Math.Min(curTotalPages, curPage + 2); }
                                 @for (int i = startPage; i <= endPage; i++)
                                 {
-                                    <li class="page-item @(i == ViewBag.Page ? "active" : "")">
-                                        <a class="page-link" href="@Url.Action("Restore", new {  page = i, pageSize = ViewBag.PageSize })">@i</a>
+                                    <li class="page-item @(i == curPage ? "active" : "")">
+                                        <a class="page-link" href="@Url.Action("Restore", PageRoute(i))">@i</a>
                                     </li>
                                 }
 
-                                <li class="page-item @(ViewBag.Page == ViewBag.TotalPages ? "disabled" : "")">
-                                    <a class="page-link" href="@Url.Action("Restore", new { page = ViewBag.Page + 1, pageSize = ViewBag.PageSize })" aria-label="Next">
+                                <li class="page-item @(curPage == curTotalPages ? "disabled" : "")">
+                                    <a class="page-link" href="@Url.Action("Restore", PageRoute(curPage + 1))" aria-label="Next">
                                         <span aria-hidden="true">&raquo;</span>
                                     </a>
                                 </li>
-                                <li class="page-item @(ViewBag.Page == ViewBag.TotalPages ? "disabled" : "")">
-                                    <a class="page-link" href="@Url.Action("Restore", new { page = ViewBag.TotalPages, pageSize = ViewBag.PageSize })" aria-label="Last">
+                                <li class="page-item @(curPage == curTotalPages ? "disabled" : "")">
+                                    <a class="page-link" href="@Url.Action("Restore", PageRoute(curTotalPages))" aria-label="Last">
                                         <span aria-hidden="true">&raquo;&raquo;</span>
                                     </a>
                                 </li>
@@ -125,7 +209,7 @@
                         </nav>
                         <div class="text-center mt-2">
                             <p class="text-muted">
-                                第 @ViewBag.Page 页，共 @ViewBag.TotalPages 页，总记录数：@ViewBag.TotalLogs
+                                第 @curPage 页，共 @curTotalPages 页，总记录数：@curTotalLogs
                             </p>
                         </div>
                     }

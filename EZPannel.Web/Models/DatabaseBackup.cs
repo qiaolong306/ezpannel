@@ -11,8 +11,26 @@ namespace EZPannel.Api.Models
         public int DatabaseId { get; set; }  // 关联的数据库ID
         [Required]
         public string DatabaseNames { get; set; } = string.Empty; // 逗号分隔的数据库名列表
-        [Required]
-        public string CronExpression { get; set; } = "0 0 2 * * ?"; // Default: every day at 2 AM
+        /// <summary>
+        /// 调度类型：Daily=按日, Monthly=按月, Yearly=按年, Once=按日期
+        /// </summary>
+        public string? ScheduleType { get; set; }
+        /// <summary>
+        /// 执行时间（格式 HH:mm）
+        /// </summary>
+        public string? RunTime { get; set; }
+        /// <summary>
+        /// 按月/按年：几号（1-31）
+        /// </summary>
+        public int? DayOfMonth { get; set; }
+        /// <summary>
+        /// 按年：几月（1-12）
+        /// </summary>
+        public int? Month { get; set; }
+        /// <summary>
+        /// 按日期：具体执行日期
+        /// </summary>
+        public DateTime? RunDate { get; set; }
         public bool IsEnabled { get; set; } 
         public DateTime? LastBackupTime { get; set; }
     }

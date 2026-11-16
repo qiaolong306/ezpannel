@@ -1,8 +1,9 @@
 using Microsoft.AspNetCore.SignalR;
-using Renci.SshNet;
 using EZPannel.Api.Data;
-using Microsoft.EntityFrameworkCore;
+using EZPannel.Api.Services;
 using System.Collections.Concurrent;
+using System.Net.WebSockets;
+using System.Text;
 
 namespace EZPannel.Api.Hubs
 {
@@ -10,107 +11,137 @@ namespace EZPannel.Api.Hubs
     public class TerminalHub : Hub
     {
         private readonly AppDbContext _context;
-        private static readonly ConcurrentDictionary<string, (SshClient Client, ShellStream Stream)> _sessions = new();
+        private readonly AgentService _agentService;
+        private static readonly ConcurrentDictionary<string, ClientWebSocket> _sessions = new();
 
-        public TerminalHub(AppDbContext context)
+        public TerminalHub(AppDbContext context, AgentService agentService)
         {
             _context = context;
+            _agentService = agentService;
         }
 
-        public async Task Connect(int serverId)
+        public async Task Connect(int serverId, int cols = 0, int rows = 0)
         {
             var server = await _context.Servers.FindAsync(serverId);
             if (server == null)
             {
-                await Clients.Caller.SendAsync("ReceiveData", "\r\n[Error] Server not found in database.\r\n");
+                await Clients.Caller.SendAsync("ReceiveData", "\r\n[Error] 数据库中找不到该服务器。\r\n");
                 return;
             }
 
             try
             {
-                var client = GetClient(server);
-                client.Connect();
-                
-                var stream = client.CreateShellStream("xterm", 80, 24, 800, 600, 1024);
-                _sessions[Context.ConnectionId] = (client, stream);
+                // 同一连接重复 Connect（例如快速重开终端）时先关掉旧的 Agent 会话，
+                // 否则 Agent 侧会遗留一个没人管的 shell 进程
+                if (_sessions.TryRemove(Context.ConnectionId, out var stale))
+                {
+                    await CloseQuietlyAsync(stale);
+                }
+
+                var ws = await _agentService.ConnectTerminalAsync(server, cols, rows);
+                _sessions[Context.ConnectionId] = ws;
 
                 var caller = Clients.Caller;
+                await caller.SendAsync("ReceiveData", $"[已连接 {server.Name} ({server.Host}:{server.AgentPort})]\r\n");
 
+                // 后台任务：持续读取 Agent 输出并转发给浏览器
                 _ = Task.Run(async () =>
                 {
-                    var buffer = new byte[1024];
+                    var buffer = new byte[4096];
                     try
                     {
-                        while (client.IsConnected)
+                        while (ws.State == WebSocketState.Open)
                         {
-                            if (stream.DataAvailable)
+                            // 按整条消息聚合后再解码：逐帧解码会把跨帧的多字节 UTF-8 字符拆坏，
+                            // 终端里就会出现乱码或光标错位
+                            using var ms = new MemoryStream();
+                            WebSocketReceiveResult result;
+                            do
                             {
-                                var read = await stream.ReadAsync(buffer, 0, buffer.Length);
-                                if (read > 0)
+                                result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
+                                if (result.MessageType == WebSocketMessageType.Close)
                                 {
-                                    var data = System.Text.Encoding.UTF8.GetString(buffer, 0, read);
-                                    await caller.SendAsync("ReceiveData", data);
+                                    break;
                                 }
-                            }
-                            else
+                                if (result.MessageType == WebSocketMessageType.Text && result.Count > 0)
+                                {
+                                    ms.Write(buffer, 0, result.Count);
+                                }
+                            } while (!result.EndOfMessage);
+
+                            if (result.MessageType == WebSocketMessageType.Close)
                             {
-                                await Task.Delay(50);
+                                await caller.SendAsync("ReceiveData", "\r\n[连接已关闭]\r\n");
+                                break;
+                            }
+                            if (ms.Length > 0)
+                            {
+                                await caller.SendAsync("ReceiveData", Encoding.UTF8.GetString(ms.ToArray()));
                             }
                         }
                     }
                     catch { }
                 });
-
-                await caller.SendAsync("ReceiveData", $"[Connected to {server.Name} ({server.Host})]\r\n");
-
-                if (server.OperatingSystem == "Windows")
-                {
-                    var chcpCmd = System.Text.Encoding.UTF8.GetBytes("chcp 65001\r");
-                    stream.Write(chcpCmd, 0, chcpCmd.Length);
-                    stream.Flush();
-                }
             }
             catch (Exception ex)
             {
-                await Clients.Caller.SendAsync("ReceiveData", $"\r\n[SSH Error] {ex.Message}\r\n");
+                await Clients.Caller.SendAsync("ReceiveData", $"\r\n[Agent Error] {ex.Message}\r\n");
             }
         }
 
         public async Task SendData(string data)
         {
-            if (_sessions.TryGetValue(Context.ConnectionId, out var session))
+            if (_sessions.TryGetValue(Context.ConnectionId, out var ws) && ws.State == WebSocketState.Open)
             {
-                // 将字符串转为 UTF8 字节数组写入流
-                var bytes = System.Text.Encoding.UTF8.GetBytes(data);
-                session.Stream.Write(bytes, 0, bytes.Length);
-                session.Stream.Flush();
+                var bytes = Encoding.UTF8.GetBytes(data);
+                await ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
             }
             await Task.CompletedTask;
         }
 
+        /// <summary>
+        /// 同步终端窗口尺寸到 Agent 的伪终端（Agent 侧二进制帧 = 控制指令）。
+        /// </summary>
+        public async Task Resize(int cols, int rows)
+        {
+            if (cols <= 0 || rows <= 0)
+            {
+                return;
+            }
+            if (_sessions.TryGetValue(Context.ConnectionId, out var ws) && ws.State == WebSocketState.Open)
+            {
+                var payload = Encoding.UTF8.GetBytes($"{{\"type\":\"resize\",\"cols\":{cols},\"rows\":{rows}}}");
+                await ws.SendAsync(new ArraySegment<byte>(payload), WebSocketMessageType.Binary, true, CancellationToken.None);
+            }
+        }
+
         public override async Task OnDisconnectedAsync(Exception? exception)
         {
-            if (_sessions.TryRemove(Context.ConnectionId, out var session))
+            if (_sessions.TryRemove(Context.ConnectionId, out var ws))
             {
-                session.Stream.Dispose();
-                session.Client.Disconnect();
-                session.Client.Dispose();
+                await CloseQuietlyAsync(ws);
             }
             await base.OnDisconnectedAsync(exception);
         }
 
-        private SshClient GetClient(Models.Server server)
+        /// <summary>
+        /// 优雅关闭 Agent 连接；Agent 收到关闭帧后会结束对应的 shell 进程。
+        /// </summary>
+        private static async Task CloseQuietlyAsync(ClientWebSocket ws)
         {
-            if (!string.IsNullOrEmpty(server.Password))
+            try
             {
-                return new SshClient(server.Host, server.Port, server.Username, server.Password);
+                if (ws.State == WebSocketState.Open || ws.State == WebSocketState.CloseReceived)
+                {
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+                    await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "disconnect", cts.Token);
+                }
             }
-            if (!string.IsNullOrEmpty(server.PrivateKey))
+            catch { }
+            finally
             {
-                var keyFile = new PrivateKeyFile(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(server.PrivateKey)));
-                return new SshClient(server.Host, server.Port, server.Username, keyFile);
+                try { ws.Dispose(); } catch { }
             }
-            throw new Exception("Auth method required");
         }
     }
 }

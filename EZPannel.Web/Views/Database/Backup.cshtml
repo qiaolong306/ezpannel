@@ -4,6 +4,19 @@
     var backupLogs = ViewBag.BackupLogs as List<EZPannel.Api.Models.BackupLog>;
 }
 
+@functions {
+    string FormatBackupSchedule(EZPannel.Api.Models.DatabaseBackupConfig c) {
+        if (string.IsNullOrWhiteSpace(c.ScheduleType)) return "-";
+        switch (c.ScheduleType) {
+            case "Daily": return "每天 " + c.RunTime;
+            case "Monthly": return "每月" + c.DayOfMonth + "日 " + c.RunTime;
+            case "Yearly": return "每年" + c.Month + "月" + c.DayOfMonth + "日 " + c.RunTime;
+            case "Once": return c.RunDate.HasValue ? c.RunDate.Value.ToString("yyyy-MM-dd") + " " + c.RunTime + "（一次）" : "一次（未设置日期）";
+            default: return c.ScheduleType;
+        }
+    }
+}
+
 <div class="container-fluid">
     <!-- 备份配置模块 -->
     <div class="row mb-4">
@@ -34,7 +47,7 @@
                                     <tr>
                                         <td>@config.Name</td>
                                         <td>@config.DatabaseNames</td>
-                                        <td>@config.CronExpression</td>
+                                        <td>@FormatBackupSchedule(config)</td>
                                         <td>
                                             @if (config.IsEnabled)
                                             {
@@ -99,13 +112,46 @@
                         <input type="text" class="form-control" id="backupConfigName" name="Name" required />
                     </div>
                     <div class="mb-3">
-                        <label for="databaseNames" class="form-label">数据库名(逗号分隔)</label>
-                        <input type="text" class="form-control" id="databaseNames" name="DatabaseNames" value="" required />
+                        <label class="form-label d-flex justify-content-between align-items-center">
+                            <span>数据库名（可多选）</span>
+                            <span class="d-flex align-items-center gap-2">
+                                <input class="form-check-input mt-0" type="checkbox" id="dbNameSelectAll" onchange="toggleAllDatabaseNames(this.checked)">
+                                <label class="form-check-label small text-muted mb-0" for="dbNameSelectAll">全选</label>
+                                <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2" onclick="reloadDatabaseNames()">刷新</button>
+                            </span>
+                        </label>
+                        <div id="databaseNameList" class="database-name-list border rounded p-2">
+                            <div class="text-muted small p-1">请先选择数据库服务器</div>
+                        </div>
+                        <input type="hidden" id="databaseNames" name="DatabaseNames" value="" />
+                        <div class="form-text">勾选需要备份的数据库，可同时备份多个库</div>
                     </div>
                     <div class="mb-3">
-                        <label for="cronExpression" class="form-label">备份时间表(Cron表达式)</label>
-                        <input type="text" class="form-control" id="cronExpression" name="CronExpression" value="0 0 2 * * ?" required />
-                        <div class="form-text">默认: 每天凌晨2点</div>
+                        <label for="scheduleType" class="form-label">调度方式</label>
+                        <select class="form-select" id="scheduleType" name="ScheduleType" onchange="updateBackupScheduleFields()">
+                            <option value="Daily">按日（每天）</option>
+                            <option value="Monthly">按月（每月某天）</option>
+                            <option value="Yearly">按年（每年某月某天）</option>
+                            <option value="Once">按日期（指定日期一次）</option>
+                        </select>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-6">
+                            <label for="runTime" class="form-label">执行时间</label>
+                            <input type="time" class="form-control" id="runTime" name="RunTime" value="02:00">
+                        </div>
+                        <div class="col-6" id="monthField" style="display:none;">
+                            <label for="runMonth" class="form-label">月份</label>
+                            <select class="form-select" id="runMonth" name="Month"></select>
+                        </div>
+                        <div class="col-6" id="dayField" style="display:none;">
+                            <label for="dayOfMonth" class="form-label">日期（几号）</label>
+                            <input type="number" class="form-control" id="dayOfMonth" name="DayOfMonth" min="1" max="31" value="1">
+                        </div>
+                        <div class="col-6" id="dateField" style="display:none;">
+                            <label for="runDate" class="form-label">执行日期</label>
+                            <input type="date" class="form-control" id="runDate" name="RunDate">
+                        </div>
                     </div>
                     <div class="mb-3 form-check">
                         <input type="checkbox" class="form-check-input" id="isEnabled" name="IsEnabled" value="true" checked />
@@ -121,12 +167,45 @@
     </div>
 </div>
 
+<style>
+    .database-name-list { max-height: 180px; overflow-y: auto; background: #fbfcfb; }
+    .database-name-list .form-check { margin-bottom: 0; }
+</style>
+
 <script>
 
     
     // 页面加载完成后绑定模态框事件
     $(document).ready(function() {
+        populateBackupMonthOptions();
+        // 切换数据库服务器时重新拉取可备份的库名
+        $('#databaseSelect').on('change', function() {
+            loadDatabaseNames([]);
+        });
+        // 勾选任意库名后同步隐藏字段
+        $('#databaseNameList').on('change', '.db-name-check', function() {
+            syncDatabaseNames();
+        });
     });
+
+    function populateBackupMonthOptions() {
+        const sel = document.getElementById('runMonth');
+        if (sel.options.length > 0) return;
+        for (let i = 1; i <= 12; i++) {
+            const opt = document.createElement('option');
+            opt.value = i;
+            opt.text = i + ' 月';
+            sel.appendChild(opt);
+        }
+    }
+
+    function updateBackupScheduleFields() {
+        const type = document.getElementById('scheduleType').value;
+        document.getElementById('monthField').style.display = (type === 'Yearly') ? 'block' : 'none';
+        document.getElementById('dayField').style.display = (type === 'Monthly' || type === 'Yearly') ? 'block' : 'none';
+        document.getElementById('dateField').style.display = (type === 'Once') ? 'block' : 'none';
+        if (type === 'Yearly') populateBackupMonthOptions();
+    }
 
     // 加载数据库列表
     function loadDatabases(callback) {
@@ -153,6 +232,80 @@
                 toastr.error('加载数据库列表失败');
             }
         });
+    }
+
+    // ===== 数据库名多选 =====
+    function escapeHtml(text) {
+        return String(text == null ? '' : text)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    // 从选中的数据库服务器拉取库名列表，selected 为需要预先勾选的库名数组
+    function loadDatabaseNames(selected) {
+        const preset = (selected || []).map(function(s) { return String(s).trim(); }).filter(function(s) { return s; });
+        const databaseId = $('#databaseSelect').val();
+        const list = document.getElementById('databaseNameList');
+        document.getElementById('dbNameSelectAll').checked = false;
+
+        if (!databaseId) {
+            list.innerHTML = '<div class="text-muted small p-1">请先选择数据库服务器</div>';
+            syncDatabaseNames();
+            return;
+        }
+
+        list.innerHTML = '<div class="text-muted small p-1">加载中...</div>';
+        $.ajax({
+            url: '@Url.Action("GetDatabases")',
+            type: 'GET',
+            data: { id: databaseId },
+            success: function(response) {
+                if (!response.success || !response.items || response.items.length === 0) {
+                    list.innerHTML = '<div class="text-muted small p-1">该服务器上没有可备份的数据库</div>';
+                    syncDatabaseNames();
+                    return;
+                }
+                let html = '';
+                response.items.forEach(function(name, index) {
+                    const checked = preset.indexOf(name) >= 0 ? ' checked' : '';
+                    html += '<div class="form-check py-1">'
+                        + '<input class="form-check-input db-name-check" type="checkbox" value="' + escapeHtml(name) + '" id="dbname_' + index + '"' + checked + '>'
+                        + '<label class="form-check-label small" for="dbname_' + index + '">' + escapeHtml(name) + '</label>'
+                        + '</div>';
+                });
+                list.innerHTML = html;
+                syncDatabaseNames();
+            },
+            error: function() {
+                list.innerHTML = '<div class="text-danger small p-1">加载数据库名失败</div>';
+                syncDatabaseNames();
+            }
+        });
+    }
+
+    function reloadDatabaseNames() {
+        loadDatabaseNames(getSelectedDatabaseNames());
+    }
+
+    function toggleAllDatabaseNames(checked) {
+        document.querySelectorAll('.db-name-check').forEach(function(el) {
+            el.checked = checked;
+        });
+        syncDatabaseNames();
+    }
+
+    // 把勾选结果写回隐藏字段（逗号分隔），保持后端原有字段格式
+    function syncDatabaseNames() {
+        const names = getSelectedDatabaseNames();
+        document.getElementById('databaseNames').value = names.join(',');
+        const all = document.querySelectorAll('.db-name-check');
+        const allChecked = all.length > 0 && names.length === all.length;
+        document.getElementById('dbNameSelectAll').checked = allChecked;
+    }
+
+    function getSelectedDatabaseNames() {
+        return Array.prototype.slice.call(document.querySelectorAll('.db-name-check:checked'))
+            .map(function(el) { return el.value; });
     }
 
     // 立即执行备份
@@ -206,6 +359,14 @@
             return;
         }
         var configName = $('#backupConfigName').val().trim();
+        // 数据库名必须至少勾选一个
+        var dbNames = getSelectedDatabaseNames();
+        if (dbNames.length === 0) {
+            toastr.error('请至少选择一个要备份的数据库');
+            return;
+        }
+        $('#databaseNames').val(dbNames.join(','));
+
         // 检查配置名称是否已存在（仅在创建或修改名称时检查）
         if (configName) {
             try {
@@ -273,12 +434,18 @@
                         modal.find('input[name="Id"]').val(config.id);
                         modal.find('input[name="Name"]').val(config.name);
                         modal.find('input[name="DatabaseNames"]').val(config.databaseNames);
-                        modal.find('input[name="CronExpression"]').val(config.cronExpression);
+                        modal.find('select[name="ScheduleType"]').val(config.scheduleType || 'Daily');
+                        modal.find('input[name="RunTime"]').val(config.runTime || '02:00');
+                        modal.find('input[name="DayOfMonth"]').val(config.dayOfMonth || 1);
+                        modal.find('select[name="Month"]').val(config.month || 1);
+                        modal.find('input[name="RunDate"]').val(config.runDate ? config.runDate.split('T')[0] : '');
                         modal.find('input[name="IsEnabled"]').prop('checked', config.isEnabled);
+                        updateBackupScheduleFields();
                         
                         // 加载数据库列表并选择当前数据库
                         loadDatabases(function() {
                             $('#databaseSelect').val(config.databaseId);
+                            loadDatabaseNames(config.databaseNames ? String(config.databaseNames).split(',') : []);
                         });
                         modal.modal('show');
                     } else {
@@ -298,10 +465,17 @@
             modal.find('input[name="Id"]').val('0');
             modal.find('input[name="Name"]').val('');
             modal.find('input[name="DatabaseNames"]').val('');
-            modal.find('input[name="CronExpression"]').val('0 0 2 * * ?');
+            modal.find('select[name="ScheduleType"]').val('Daily');
+            modal.find('input[name="RunTime"]').val('02:00');
+            modal.find('input[name="DayOfMonth"]').val('1');
+            modal.find('select[name="Month"]').val('1');
+            modal.find('input[name="RunDate"]').val('');
             modal.find('input[name="IsEnabled"]').prop('checked', true);
+            updateBackupScheduleFields();
             // 加载数据库列表
             loadDatabases();
+            document.getElementById('databaseNameList').innerHTML = '<div class="text-muted small p-1">请先选择数据库服务器</div>';
+            document.getElementById('databaseNames').value = '';
             modal.modal('show');
         }
         bindSaveButtonEvent(configId);

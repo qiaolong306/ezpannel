@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using EZPannel.Api.Data;
 using EZPannel.Api.Models;
+using EZPannel.Api.Services;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
@@ -15,11 +16,13 @@ namespace EZPannel.Api.Controllers
     {
         private readonly AppDbContext _context;
         private readonly ScriptAutoRunService _scriptAutoRunService;
+        private readonly AgentFileService _agentFileService;
 
-        public ScriptsController(AppDbContext context, ScriptAutoRunService scriptAutoRunService)
+        public ScriptsController(AppDbContext context, ScriptAutoRunService scriptAutoRunService, AgentFileService agentFileService)
         {
             _context = context;
             _scriptAutoRunService = scriptAutoRunService;
+            _agentFileService = agentFileService;
         }
 
         [HttpGet]
@@ -142,50 +145,15 @@ namespace EZPannel.Api.Controllers
                     return BadRequest(new { message = "Server not found" });
                 }
 
-                // 使用SSH连接到服务器并上传文件
-                using (var client = new Renci.SshNet.SshClient(server.Host, server.Port, server.Username, server.Password))
+                // 通过 Agent 的文件接口上传脚本，替代原有 SFTP
+                string remotePath = "ez-script-tmp/" + fileName;
+                await _agentFileService.CreateDirectoryAsync(server, "ez-script-tmp");
+                using (var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content)))
                 {
-                    client.Connect();
-
-                    // 确定上传路径 - 对于不同操作系统使用不同的路径
-                    string remotePath;
-                    if (server.OperatingSystem == "Windows")
-                    {
-                        remotePath = "ez-script-tmp\\" + fileName;
-                        // 确保C:\ez-script-tmp\目录存在
-                        using (var cmd = client.CreateCommand("if not exist \".\ez-script-tmp\" mkdir \"ez-script-tmp\""))
-                        {
-                            cmd.Execute();
-                        }
-                    }
-                    else
-                    {
-                        remotePath = "ez-script-tmp/" + fileName;
-                        // 确保/tmp目录存在
-                        using (var cmd = client.CreateCommand("mkdir -p ez-script-tmp"))
-                        {
-                            cmd.Execute();
-                        }
-                    }
-
-                    // 将脚本内容写入临时文件并上传
-                    using (var sftp = new Renci.SshNet.SftpClient(server.Host, server.Port, server.Username, server.Password))
-                    {
-                        sftp.Connect();
-                        // 将内容写入字节数组
-                        byte[] contentBytes = System.Text.Encoding.UTF8.GetBytes(content);
-                        using (var stream = new System.IO.MemoryStream(contentBytes))
-                        {
-                            sftp.UploadFile(stream, remotePath, true);
-                        }
-                        
-                        sftp.Disconnect();
-                    }
-
-                    client.Disconnect();
-
-                    return Ok(new { filePath = remotePath });
+                    await _agentFileService.UploadFileAsync(server, remotePath, stream);
                 }
+
+                return Ok(new { filePath = remotePath });
             }
             catch (Exception ex)
             {

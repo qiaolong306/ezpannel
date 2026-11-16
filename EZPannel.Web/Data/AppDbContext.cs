@@ -14,7 +14,12 @@ namespace EZPannel.Api.Data
         public DbSet<SavedQuery> SavedQueries { get; set; }
         public DbSet<DatabaseBackupConfig> DatabaseBackupConfigs { get; set; }
         public DbSet<BackupLog> BackupLogs { get; set; }
-        public DbSet<ConfigModel> Configs { get;  set; }
         public DbSet<ScriptAutoRunModel> ScriptAutoRuns { get; set; }
+        public DbSet<SystemSetting> SystemSettings { get; set; }
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder) {
+            base.OnModelCreating(modelBuilder);
+            modelBuilder.Entity<SystemSetting>().HasKey(s => s.SettingKey);
+        }
     }
 }

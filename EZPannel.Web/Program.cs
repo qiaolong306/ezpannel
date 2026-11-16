@@ -11,6 +11,9 @@ using Quartz;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// 同时输出到控制台与 logs 目录下的按天日志文件（系统设置 - 查看日志 读取此目录）
+builder.Logging.AddProvider(new FileLoggerProvider(FileLoggerProvider.DefaultDirectory));
+
 // 注册编码提供程序以支持 GBK 等编码
 Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
@@ -29,14 +32,15 @@ builder.Services.AddCaptcha(options =>
     options.IgnoreCase = true;
 });
 
-// Register SSH & SFTP Services
-builder.Services.AddScoped<SshService>();
-builder.Services.AddScoped<SftpService>();
-builder.Services.AddScoped<ConfigService>();
+// Register Agent Services (HTTP/WebSocket，目标机器上运行的 EZPannelClient)
+builder.Services.AddHttpClient();
+builder.Services.AddScoped<AgentService>();
+builder.Services.AddScoped<AgentFileService>();
 
 // Register Database Backup Services
 builder.Services.AddScoped<IDatabaseBackupService, DatabaseBackupService>();
 builder.Services.AddScoped<ScriptAutoRunService>();
+builder.Services.AddScoped<ISystemSettingsService, SystemSettingsService>();
 
 // Configure Quartz Scheduler
 builder.Services.AddQuartz(q => {
@@ -51,11 +55,6 @@ builder.Services.AddQuartzHostedService(q => {
 builder.Services.AddDbContext<AppDbContext>(options => {
     options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")).EnableSensitiveDataLogging();
    } );
-
-
-// Register Proxy Background Service
-
-
 
 
 // Add CORS
@@ -110,6 +109,13 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope()) {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     db.Database.EnsureCreated();
+
+    // EnsureCreated 对已存在的库不会补建新表，这里为系统设置表做一次幂等建表
+    db.Database.ExecuteSqlRaw(
+        "CREATE TABLE IF NOT EXISTS \"SystemSettings\" (" +
+        "\"SettingKey\" TEXT NOT NULL CONSTRAINT \"PK_SystemSettings\" PRIMARY KEY, " +
+        "\"Value\" TEXT NULL, " +
+        "\"UpdatedAt\" TEXT NOT NULL);");
 }
 
 // Configure the HTTP request pipeline.
@@ -140,8 +146,6 @@ async Task RunWithBackupInitialization(WebApplication application) {
     using (var scope = application.Services.CreateScope()) {
         var backupService = scope.ServiceProvider.GetRequiredService<IDatabaseBackupService>();
         var autoRunService = scope.ServiceProvider.GetRequiredService<ScriptAutoRunService>();
-        var appDbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        appDbContext.Database.EnsureCreated();
         await backupService.InitializeBackupJobs();
         await autoRunService.InitializeAutoRunJobs();
     }

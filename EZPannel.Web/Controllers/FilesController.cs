@@ -18,11 +18,11 @@ namespace EZPannel.Api.Controllers {
     [ApiController]
     public class FilesController : ControllerBase {
         private readonly AppDbContext _context;
-        private readonly SftpService _sftpService;
+        private readonly AgentFileService _fileService;
 
-        public FilesController(AppDbContext context, SftpService sftpService) {
+        public FilesController(AppDbContext context, AgentFileService fileService) {
             _context = context;
-            _sftpService = sftpService;
+            _fileService = fileService;
         }
 
         [HttpGet("{serverId}/list")]
@@ -31,7 +31,7 @@ namespace EZPannel.Api.Controllers {
             if (server == null) return NotFound();
 
             try {
-                var files = await _sftpService.ListFilesAsync(server, path);
+                var files = await _fileService.ListFilesAsync(server, path);
                 return Ok(files);
             }
             catch (System.Exception ex) {
@@ -49,7 +49,7 @@ namespace EZPannel.Api.Controllers {
             try {
                 using var stream = file.OpenReadStream();
                 var remotePath = Path.Combine(path, file.FileName).Replace("\\", "/");
-                await _sftpService.UploadFileAsync(server, remotePath, stream);
+                await _fileService.UploadFileAsync(server, remotePath, stream);
                 return Ok();
             }
             catch (System.Exception ex) {
@@ -63,7 +63,7 @@ namespace EZPannel.Api.Controllers {
             if (server == null) return NotFound();
 
             try {
-                var data = await _sftpService.DownloadFileAsync(server, path);
+                var data = await _fileService.DownloadFileAsync(server, path);
                 var fileName = Path.GetFileName(path);
                 return File(data, "application/octet-stream", fileName);
             }
@@ -78,7 +78,7 @@ namespace EZPannel.Api.Controllers {
             if (server == null) return NotFound();
 
             try {
-                await _sftpService.DeleteAsync(server, path, isDirectory);
+                await _fileService.DeleteAsync(server, path, isDirectory);
                 return Ok();
             }
             catch (System.Exception ex) {
@@ -92,7 +92,7 @@ namespace EZPannel.Api.Controllers {
             if (server == null) return NotFound();
 
             try {
-                var content = await _sftpService.GetFileContentAsync(server, path);
+                var content = await _fileService.GetFileContentAsync(server, path);
                 return Ok(new { content = content });
             }
             catch (System.Exception ex) {
@@ -106,7 +106,7 @@ namespace EZPannel.Api.Controllers {
             if (server == null) return NotFound();
 
             try {
-                await _sftpService.SaveFileContentAsync(server, request.Path, request.Content);
+                await _fileService.SaveFileContentAsync(server, request.Path, request.Content);
                 return Ok();
             }
             catch (System.Exception ex) {
@@ -120,7 +120,7 @@ namespace EZPannel.Api.Controllers {
             if (server == null) return NotFound();
 
             try {
-                await _sftpService.CreateDirectoryAsync(server, path);
+                await _fileService.CreateDirectoryAsync(server, path);
                 return Ok();
             }
             catch (System.Exception ex) {
